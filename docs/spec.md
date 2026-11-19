@@ -422,7 +422,7 @@ Sony nasne の `nasne-recpt1` のように、「1 回の起動で 1 つの局 (�
 
 #### 置き方 A: エージェントは別の機械に置き、nasne を HTTP で呼ぶ (勧める)
 
-denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェントを動かし、`cmd` バックエンドで `curl` を起動します。nasne には何も足しません。MIPS のビルドもカーネルの制限も関わりません。
+denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェントを動かし、`cmd` バックエンドで `curl` を起動します。**エージェントを nasne に足さない**ので、MIPS のビルドもカーネルの制限も、TLS の暗号の負荷も nasne には関わりません (nasne 側で動かすのは、今までどおり `nasne-recpt1 --listen 8301` の HTTP だけ)。nasne とエージェントの間は平文の HTTP で、TLS になるのはエージェントと denpa の間です。**負荷の面からも、こちらを勧めます** (置き方 B の負荷は下)。
 
 ```json
 {
@@ -440,7 +440,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 
 - `tuners.json` は `{"name": "nasne", "types": ["GR", "BS", "CS"], "device": "cmd:Sony nasne (nasne-recpt1 HTTP):nasne.local"}` の 1 台 (既定の 1 系統)。nasne 側を `--dual-tuner` で動かすなら、`types` を `["GR"]` と `["BS", "CS"]` に分けた 2 台にする (同じ `device`)
 - `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
-- 衛星の `:TSID` は、コマンドラインの `--tsid` に当たる HTTP の指定が無いので渡せない (6.2 の制限と同じ。`BS15_0` のスロット番号で代える)
+- 衛星の `:TSID` は、コマンドラインの `--tsid` に当たる HTTP の指定が、確かめた版には無いので渡せない (6.2 の制限と同じ。`BS15_0` のスロット番号で代える)。nasne の版によっては HTTP に `tsid=` があるかもしれず、実機の版では未確認 ([20](#20-決めていないこと確かめること))
 - 選局の切り替えは curl を殺して起動し直す。nasne 側はロックを 4 秒待つので、連続の切り替えでは `busyExitCode` が返ることがある (409 で denpa が掛け直す)
 - nasne 側の `/status` と `nasne-waked` (予約の 5 分前に起こす) は使わない。電源を落とす運用は denpa とは合わない (録画の時刻を nasne が知らない) ので、nasne は常時起動にする
 
@@ -453,7 +453,11 @@ denpa 本体は nasne では動かない (bun の mipsel は無い) ので、動
 - 機材の定義は A の `command` を `["/usr/local/sbin/nasne-recpt1", "{channel}", "-", "-"]`、`serviceArg` を `["--sid", "{service}"]`、`busyExitCode` を 3 に替える。衛星の `:TSID` は `["--tsid", "{tsid}"]` で渡せる (`{tsid}` は `:TSID` の値。無ければ空。`tsidArg` として `serviceArg` と同じ形で足す)。`--dual-tuner` を使うなら `command` に足し、`tuners.json` を 2 台にする
 - `nasne-recpt1 --listen 8301` を同時に動かしてもよい (同じロックを使うので取り合いは成り立つ)
 - 置き場: `TUNERS_FILE` などは `/var/lib/denpa-px4-agent/`。`RAW_DIR` は使わない (録画は denpa の側に置かれる)
-- **負荷 (実機の nasne で測った。仕様の見込みは当たらなかった)。** 74Kc には AES の命令も ChaCha20 の最適化も無く、TLS (ChaCha20-Poly1305) は純 Go の実装になる。12 Mbps の TS を 1 本流すと、エージェントの CPU は 1 コアの約 60%、流せたのは 9.6 Mbps で、CPU の約 78% が TLS の暗号化だった (プロファイルは `-tags pprof` のビルドで `CPUPROFILE=<ファイル>` を渡し、`SIGUSR1` で書く)。nasne の ISDB-T の 1 サービスは 10 Mbps 前後なので、**ぎりぎり**。余裕を取るなら置き方 A を使う
+- **負荷 (実機の nasne で測った。仕様の見込みは当たらなかった)。** nasne は 1 コア・1 スレッドで、74Kc には AES の命令も ChaCha20 の最適化も無い。TLS (ChaCha20-Poly1305) は純 Go の実装になり、**暗号の CPU が足りない**。結果は次の 2 つで、別の試験なので混ぜない。
+  - **エージェントに TS を流した試験 (2026-11 前半)。** 12 Mbps の TS を 1 本流すと、エージェントの CPU は 1 コアの約 60%、流せたのは 9.6 Mbps で、CPU の約 78% が TLS の暗号化だった (プロファイルは `-tags pprof` のビルドで `CPUPROFILE=<ファイル>` を渡し、`SIGUSR1` で書く)。この試験の入力の経路 (実受信か合成か、`nasne-recpt1` を直に起動したか) は記録に残っていない。再測定のときに書く ([イシュー #1](https://github.com/maimainoue/denpa-px4-agent/issues/1))
+  - **TLS の暗号だけのループバック試験 (2026-11-20)。** 同じ nasne 実機、Go 1.27.0、`linux/mipsle` (`softfloat`)、`crypto/tls` の TLS 1.3 (`TLS_CHACHA20_POLY1305_SHA256`)、socketpair の上で、送り手と受け手を**同じ 1 コアで**走らせた。数字は**暗号化と復号の合計**で、送り手だけならおよそ 2 倍 (約 18〜24 Mbps/CPU 秒)。`Write` の大きさ 32 KiB・16 KiB・1316 B で約 9.0・12.2・10.1 Mbps/CPU 秒 (各 1 回、8 MB。誤差を含む)。平文は約 263 Mbps/CPU 秒 (16 MB) で、TLS は約 20 倍遅い。この値は置き方 B の送信能力そのものではなく、「暗号に使える CPU はこの程度」という目安
+  - nasne の ISDB-T の 1 サービスは 10 Mbps 前後なので、**ぎりぎり**。同じコアで `nasne-recpt1` も動くので、余裕は更に小さい。**余裕を取るなら置き方 A を使う**。実機の既存構成 (mirakc から `nasne-tune.sh` 経由で `wget` を起動する) では `wget` のプロセスも同じコアを使う。ここに書いた置き方 B の設定 (`nasne-recpt1` の直接起動) には `wget` は無い
+  - 改善の見込み (暗号の MIPS アセンブリ化、`wget` を外す) は [#3](https://github.com/maimainoue/denpa-px4-agent/issues/3)・[#4](https://github.com/maimainoue/denpa-px4-agent/issues/4)。どちらも未着手
 - **メモリは足りる。** mirakc を止めてスワップを切った状態 (バッファを除いた空き 約 200 MB) で、12 Mbps 1 本・同時 2 本・遅い読み手 (溜め込みの上限 16 MiB まで) を試し、エージェントの RSS は待機 4〜8 MB、最大で約 26 MB。バッファを除いた空きは最小でも 約 188 MB だった。`STREAM_QUEUE_BYTES=16777216`・`GOMEMLIMIT=96MiB`・`GOGC=50` を環境に書く
 - **ビルドは `-tags nasne,nethttpomithttp2`。** `nasne` は chardev と pcscd を外し (64 KB 減)、`nethttpomithttp2` は標準ライブラリの HTTP/2 を外す (さらに 385 KB 減。API は HTTP/1.1 だけなので影響しない)。合わせて 8.98 MB → 8.52 MB (5%)。**待機時の RSS は 7.1 MB → 4.4 MB (約 38% 減)**。自分のコードは全体の約 3% (293 KB) で、残りは標準ライブラリ (crypto/tls・runtime・net/http・encoding/json) なので、これ以上の削減は小さい
 - 止めるとき (`SHUTDOWN_WAIT`) に録画が終わるまで待つのは同じ。nasne の電源を落とす仕組みとは合わせない
@@ -1040,7 +1044,7 @@ services:
 - `/denpa/decode` の応答の項目 (付属のエージェントの `Scramble.Decode` の JSON をそのまま写すか)
 - macOS で DriverHost_PX4 を root で動かしたときの socket の権限 (全ユーザーが繋げる) と、エージェントを一般ユーザーで動かす構成
 - `cmd` の recisdb の書き方 (`ISDBC-C30_2`・`J83B-H044`) は recisdb の未リリースの枝 (kazuki0824/recisdb-rs#202) のもの。リリースされたら引数の形を確かめ直す
-- nasne の置き方 B で、実際の受信と録画が通るか。公式カーネル (2.6.29) で Go のバイナリが動き、エージェントが起動して API が通るところまでは実機で確かめた ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。アンテナを繋いでいない nasne だったので、TS が流れるところ・`--sid` で局を絞るところ・15 Mbps を TLS で流す負荷は未確認
+- nasne の置き方 B で、実際の受信と録画が通るか。公式カーネル (2.6.29) で Go のバイナリが動き、エージェントが起動して API が通るところまでは実機で確かめた ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。アンテナを繋いでいない nasne だったので、TS が流れるところ・`--sid` で局を絞るところ・15 Mbps を TLS で流す負荷は未確認。6.5 の負荷の数字 (12 Mbps の試験・暗号のループバック) とメモリの試験は、実放送の受信や安定した録画の確認とは別のもの
 - `nasne-recpt1` の HTTP に `--tsid` に当たる指定があるか (無ければ置き方 A では衛星のスロット番号だけ)
 - `singleService` のために denpa の録画の選局に `service` を付ける直しを、denpa 本体のどのバージョンで入れるか。付かない denpa と組んだときは、録画の選局を 400 で断って記録に出す
 - nasne の `--dual-tuner` の既知の問題 (待機プロセスが増える・2 本目の映像の開始が遅れる) が、denpa の切り替えの頻度で起きるか
