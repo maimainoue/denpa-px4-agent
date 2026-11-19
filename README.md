@@ -9,7 +9,7 @@
   - e-Better: DTV02-1T1S-U (実験的)・DTV02A-1T1S-U・DTV02A-4TS-P・DTV02A-5TS-P・DTV03A-1TU (実験的)
   - 機種の定義は `devices.json` で足したり、受けられる種別を変えたりできます (対象外の機種の動作は保証しません)
 - recpt1 互換の CLI (recpt1・recisdb・px4rec) も、`devices.json` にコマンドを書けばチューナーとして呼べる (Linux・macOS)。C/N は出ず、衛星の TSID 指定 (`BS15:16625`) は渡せないので、衛星は番組表の入口しか受けられない
-- Sony nasne ([SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1`) も使える。別の機械から HTTP で呼ぶ置き方 (勧める) と、nasne の上で動かす置き方 (mipsel、公式の 2.6.29 カーネルで動く) がある。nasne は 1 回に 1 局しか出さず復号も機材の中で行うので、denpa 側に録画の選局へ局を付ける直しが要る
+- Sony nasne ([SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1`) も使える。別の機械から HTTP で呼ぶ置き方 (勧める) と、nasne の上で動かす置き方 (mipsel、公式の 2.6.29 カーネルで、起動・API・コマンドの起動までを実機で確認) がある。nasne は 1 回に 1 局しか出さず復号も機材の中で行うので、denpa 側に録画の選局へ局を付ける直しが要る
 
 denpa 付属のエージェントは PLEX・e-Better の IT930x の機材を USB で直に持つので、px4_drv を入れたホストでは使えません。
 このエージェントは px4_drv を残したまま、その機材を denpa で使うためのものです。
@@ -44,7 +44,7 @@ go build ./cmd/denpa-px4-agent
 GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0   go build -trimpath -tags nasne,nethttpomithttp2 -ldflags "-s -w" -o denpa-px4-agent ./cmd/denpa-px4-agent
 ```
 
-実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。1 コアの CPU が足りず、12 Mbps は 9.6 Mbps までしか流せなかった。TLS の暗号 (純 Go の ChaCha20-Poly1305) が CPU の大半を使う)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。
+実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。12 Mbps の試験では 9.6 Mbps までしか流せず、エージェントの CPU の大半は TLS の暗号 (純 Go の ChaCha20-Poly1305) だった。頭打ちの原因の確定は再測定のあと)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。
 
 ### 未実装・未確認
 
