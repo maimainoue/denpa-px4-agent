@@ -1,6 +1,6 @@
 # denpa-px4-agent 仕様書
 
-denpa のチューナーエージェントと同じ API を持ち、px4_drv (自分の fork) の機材で選局し、その内蔵カードリーダーと外付けのカードリーダーで B-CAS を使うエージェントの仕様です。
+denpa のチューナーエージェントと同じ API を持ち、px4_drvの機材で選局し、その内蔵カードリーダーと外付けのカードリーダーで B-CAS を使うエージェントの仕様です。
 Linux では px4_drv のデバイスファイル (`/dev/px4video*` など) を、Windows と macOS では px4_drv の DriverHost_PX4 を使います。
 コードを書く人向けに、denpa との約束、px4_drv との約束、B-CAS と復号、設定、配布、テストを書きます。
 denpa の設計の理由は denpa の `docs/agent.md` にあり、この文書は「何をどう作るか」だけを書きます。
@@ -13,7 +13,7 @@ denpa の設計の理由は denpa の `docs/agent.md` にあり、この文書�
 
 - 言語は Go、ライセンスは GPL-2.0
 - 対象は Linux (amd64・arm64)、Windows (x64)、macOS (Apple Silicon・Intel) の 3 つ。機材に触る層だけを OS ごとに分け、ほかは共通にする
-- 機材は px4_drv (tsukumijima fork を元にした自分の fork) が扱うもの全部。PLEX・e-Better の IT930x の機材、TurboSight TBS 5530 (地上波とケーブル)、MyGica T230C、Sony CECH-ZD1 J、PIXELA PIX-DT295、I-O DATA GV-MVP/XZ、Siano RIO 系 (PX-S1UD V2.0・PX-Q1UD)
+- 機材は [tsukumijima/px4_drv](https://github.com/tsukumijima/px4_drv) が対応する機種だけ (PLEX の PX-W3U4・PX-Q3U4・PX-W3PE4・PX-Q3PE4・PX-W3PE5・PX-Q3PE5・PX-MLT5PE・PX-MLT8PE・PX-M1UR・PX-S1UR、e-Better の DTV02-1T1S-U・DTV02A-1T1S-U・DTV02A-4TS-P・DTV02A-5TS-P・DTV03A-1TU)。[3.2](#32-組み込みの表)
 - **機材の定義は設定ファイルで足せます。** 機種ごとに受けられる種別 (BS を受けられるかなど) も設定で変えられます ([3](#3-機材の定義))
 - 選局は、Linux では px4_drv のデバイスファイルの ioctl と `read()`、Windows と macOS では DriverHost_PX4 のパイプで行う。USB は直に触らない
 - recpt1 互換の CLI (recpt1・recisdb・px4rec) も、設定ファイルに書けばチューナーとして呼べる ([6](#6-コマンド-recpt1-互換の-cli-のバックエンド))。C/N は出ず、TSID の指定もできない逃げ道
@@ -139,7 +139,7 @@ type Tuner interface {
 | `singleService` / `decryptedByDevice` / `serviceArg` / `tsidArg` / `busyExitCode` | 1 サービスしか出ない機材と、機材の中で復号する機材のため ([6.4](#64-1-サービスしか出ない機材と機材の中で復号する機材))                                             |
 | `notes`              | 自由な文。画面には出さない                                                                                                                                                         |
 
-**`types` を変えれば、その機種で受ける種別を絞れます。** 衛星のアンテナが無い家で PX-MLT5PE の受信機から `BS` `CS` を外す、TBS 5530 でケーブルを受けるときに `CATV` を足す、のように使います。`GET /denpa/tuners` の `receivable` はここの `types` をそのまま返し、denpa の設定はこれに無い種別を選ばせません。自動検出した `tuners.json` の `types` には、`GR` `BS` `CS` のうち `receivable` にあるものだけを入れます (`CATV` と `SKY` はスキャンが長くなるので、人が足す)。
+**`types` を変えれば、その機種で受ける種別を絞れます。** 衛星のアンテナが無い家で PX-W3U4 の受信機から `BS` `CS` を外す、PX-MLT5PE でケーブルを受けるときに `CATV` を足す、のように使います。`GET /denpa/tuners` の `receivable` はここの `types` をそのまま返し、denpa の設定はこれに無い種別を選ばせません。自動検出した `tuners.json` の `types` には、`GR` `BS` `CS` のうち `receivable` にあるものだけを入れます (`CATV` と `SKY` はスキャンが長くなるので、人が足す)。
 
 ### 3.2 組み込みの表
 
@@ -150,16 +150,12 @@ type Tuner interface {
 | PLEX PX-MLT5PE / MLT5U、DTV02A-5TS-P | `0511:024e` / `084e` / `924e`          | `pxmlt5video`    | 0〜4: `GR` `BS` `CS` `CATV` `SKY`                                     | 15   | あり   |                                                                                        |
 | PLEX PX-MLT8PE                     | `0511:0253` (5 つ)、`0511:0252` (3 つ)   | `pxmlt8video`    | 同上                                                                  | 15   | 5 つの側 | USB デバイスごとに別の機材                                                            |
 | e-Better DTV02A-4TS-P              | `0511:0254`                              | `isdb6014video`  | 0〜3: 同上                                                            | 15   | あり   |                                                                                        |
-| DTV02-1T1S-U / DTV02A-1T1S-U       | `0511:004b` / `084b`                     | `isdb2056video`  | 0: `GR` `BS` `CS`                                                     | 無し | あり   |                                                                                        |
+| DTV02-1T1S-U / DTV02A-1T1S-U       | `0511:004b` / `084b`                     | `isdb2056video`  | 0: `GR` `BS` `CS`                                                     | 無し | あり   | DTV02-1T1S-U は px4_drv で実験的                                                       |
 | PLEX PX-M1UR                       | `0511:0854`                              | `pxm1urvideo`    | 0: `GR` `BS` `CS`                                                     | 無し | あり   |                                                                                        |
 | PLEX PX-S1UR                       | `0511:0855`                              | `pxs1urvideo`    | 0: `GR`                                                               | 無し | あり   |                                                                                        |
-| e-Better DTV03A-1TU                | `0511:0052`                              | `isdbt2071video` | 0: `GR`                                                               | 無し | あり   |                                                                                        |
-| TurboSight TBS 5530                | `734c:5530`                              | `tbs5530video`   | 0: `GR` `CATV`                                                        | 無し | 無し   | 衛星は受けられない (M88RS6060 は DVB-S 専用)。ファームウェアは利用者が置く。host では DriverHost_PX4.ini の `ExperimentalISDBC=true` が要る |
-| MyGica T230C / T230C2              | `0572:c68a`                              | `px4video`       | 0: `CATV` `SKY`                                                       | 無し | 無し   | 実験的。Linux の devname は fork の登録 (`px4video`) に従う。J.83B は実機未確認          |
-| Sony CECH-ZD1 J                    | `054c:04b2`                              | `tornevideo`     | 0: `GR`                                                               | 無し | あり   |                                                                                        |
-| PIXELA PIX-DT295 Rev.01 / Rev.02   | `06b8:103b` / `105c`                     | `dt295video`     | 0: `GR`                                                               | 無し | あり   |                                                                                        |
-| I-O DATA GV-MVP/XZ                 | `04bb:0530`                              | `xzvideo`        | 0: `GR`                                                               | 無し | あり   |                                                                                        |
-| Siano RIO (PX-S1UD V2.0 / PX-Q1UD) | `3275:0080`                              | `px4video`       | 0: `GR`                                                               | 無し | 無し   | Linux では smsusb と取り合うので、どちらかに寄せる                                      |
+| e-Better DTV03A-1TU                | `0511:0052`                              | `isdbt2071video` | 0: `GR`                                                               | 無し | あり   | px4_drv で実験的 (ロット番号 2021-11 以降の個体だけ)                                    |
+
+この表が、対象の機種のすべてです (tsukumijima/px4_drv の「対応デバイス」と同じ)。
 
 `host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
 
@@ -174,7 +170,7 @@ px4_drv は、機種ごとの名前のデバイスファイルを受信機の数
 
 - 機材が 2 台以上あると番号は続きます (PX-W3U4 が 2 台なら `px4video0`〜`7`)。筐体の中の受信機の番号は、[4.2](#42-機材の見つけ方) の sysfs で決めます
 - udev の既定は `GROUP="video", MODE="0664"` です。エージェントを動かすユーザーを `video` グループに入れるか、コンテナに `/dev` を渡します ([16](#16-配布))
-- 各デバイスファイルが受けられる方式は、ドライバが `system_cap` として持ちます (PX4 系は受信機ごとに S か T、PX-MLT 系は T・S・C・J83B、TBS 5530 は T・C、T230C は C・J83B、ほかは T)。受けられない方式を `PTX_SET_SYSTEM_MODE` に渡すと `EINVAL` です
+- 各デバイスファイルが受けられる方式は、ドライバが `system_cap` として持ちます (PX4 系は受信機ごとに S か T、PX-MLT 系は T・S・C・J83B、ほかは T)。受けられない方式を `PTX_SET_SYSTEM_MODE` に渡すと `EINVAL` です
 
 ### 4.2 機材の見つけ方
 
@@ -182,7 +178,7 @@ px4_drv は、機種ごとの名前のデバイスファイルを受信機の数
 
 1. `/dev` から、機材の定義にある `devname` で始まるデバイスファイルを集める
 2. それぞれ `/sys/class/<クラス>/<名前>/device` の先を読む。クラスはデバイスファイルの名前から `video` を除いたもの (`px4video0` なら `/sys/class/px4/px4video0`、`pxmlt5video0` なら `/sys/class/pxmlt5/pxmlt5video0`)。先は USB インターフェースのディレクトリで、その親が USB デバイス。`idVendor`・`idProduct`・`serial`・`busnum`・`devpath` を読む
-3. USB デバイスごとに受信機をまとめ、デバイスファイルの番号順に `#0` から番号を振る。機種は `idVendor:idProduct` を機材の定義の `usb` と突き合わせて決める (同じ `devname` に機種が複数あるときのため。`px4video` は PX4 系・T230C・Siano RIO が使う)
+3. USB デバイスごとに受信機をまとめ、デバイスファイルの番号順に `#0` から番号を振る。機種は `idVendor:idProduct` を機材の定義の `usb` と突き合わせて決める (同じ `devname` に機種が複数あるときのため。`px4video` は PX4 系が使う)
 4. `pairBySerial` の機種は、`serial` の先頭 14 桁が同じで末尾が `1` と `2` の 2 つの USB デバイスを同じ筐体にする。末尾 `1` の側を先に並べ、`#0`〜`#3` と `#4`〜`#7` にする。片方しか無ければ、その側だけを並べる
 
 sysfs が読めなければ (権限、コンテナで `/sys` が無い)、デバイスファイルの名前だけで機種を決め (`devname` が 1 機種に決まるときだけ)、番号は名前の数字のままにします。
@@ -320,14 +316,16 @@ DriverHost_PX4 には受信機を並べるコマンドが無いので、USB を�
 1 つのチューナーが制御のパイプを 1 本持ち、受信機を開いたままにします (chardev と同じく、最初の選局で開いて手放すまで)。
 
 1. 最初の選局で: 制御のパイプを繋ぎ、`GET_VERSION` → `OPEN` (`device_guid`・`index`・`systems` は受信機の定義の方式のビット和)。失敗したら `<チューナー名>: 受信機を開けません (DriverHost_PX4 に空きがありません)` で 500
-2. TS のパイプを繋ぎ、`SET_DATA_ID` に `OPEN` の応答の `data_id` を書く (応答は無い)。`SET_CAPTURE` の前に繋ぐ
-3. 選局し直すときは `SET_CAPTURE(false)`。衛星なら `SET_LNB_VOLTAGE(15 | 11 | 0)` (`lnb` の無い機種では送らない)
+2. TS のパイプを繋ぎ、`SET_DATA_ID` に `OPEN` の応答の `data_id` を書く (応答は無い)。`SET_CAPTURE` の前に繋ぐ。**TS のパイプは受信機を手放すまで繋ぎっぱなしにし、読む goroutine を 1 本持つ。** 選局のたびに繋ぎ直すと DriverHost_PX4 に切られる。選局の読み手は、その goroutine の列から取る。読み手を外せば読み待ちは解ける
+3. `SET_CAPTURE(true)` を最初の選局で 1 回送る (BonDriver と同じ。選局の前)。**選局し直すときに `SET_CAPTURE(false)` で止めない。** 衛星なら `SET_LNB_VOLTAGE(15 | 11 | 0)` (`lnb` の無い機種では送らない)
 4. `SET_PARAMS`: `system` と `freq` (kHz) と追加パラメータ ([7.3](#73-チャンネル名から選局の値へ) の表の host の列)。`TUNE(timeout)` は 5,000 ms (ISDB-C と J.83B は DriverHost_PX4 の中で 1 秒でロックを打ち切る)。失敗は「同期しませんでした (…)」。TSMF の TS が無いときも `TUNE` が失敗するだけで区別できないので、同じ文言にする
-5. `SET_CAPTURE(true)` → TS のパイプを読む。`PURGE` を 1 回送り、前のチャンネルの残りを捨てる
-6. C/N は `READ_STATS` の `CNR` (mdB)、ロックは `CHECK_LOCK`
-7. 手放すときは `SET_CAPTURE(false)` → `SET_LNB_VOLTAGE(0)` → `CLOSE` → パイプを閉じる
+5. 列に溜まった前のチャンネルの残りを捨て、`PURGE` を 1 回送る。`PURGE` のあとの 1 塊も捨てる (BonDriver の `NumberOfBuffersToIgnoreAfterPurge`)
+6. C/N は `READ_STATS` の `CNR` (mdB)、ロックは `CHECK_LOCK`。`READ_STATS` が失敗 (`status` 2) する機種は、C/N を null にする
+7. 選局を終えたら (`Stop`) 読み手を外すだけで、受信は止めない。手放すとき (`Close`) に `SET_CAPTURE(false)` → `SET_LNB_VOLTAGE(0)` → `CLOSE` → パイプを閉じる
 
-DriverHost_PX4 の `SET_PARAMS` は方式を `systems` に含む受信機でだけ通ります。PX-MLT 系の受信機は定義が `ISDB-T,ISDB-S` でも DriverHost_PX4 が ISDB-C と J.83B を足します。TBS 5530 は `DriverHost_PX4.ini` の `[DeviceDefinition…Config]` に `ExperimentalISDBC=true` が要ります。
+Windows のパイプは `FILE_FLAG_OVERLAPPED` で開く ([5.1](#51-接続と起動))。同期 I/O のハンドルでは、TS のパイプの読み待ちの間、同じハンドルへの `PURGE` の書き込みが塞がる (実機で選局が固まった)。
+
+DriverHost_PX4 の `SET_PARAMS` は方式を `systems` に含む受信機でだけ通ります。PX-MLT 系の受信機は定義が `ISDB-T,ISDB-S` でも DriverHost_PX4 が ISDB-C と J.83B を足します。
 
 ## 6. コマンド (recpt1 互換の CLI) のバックエンド
 
@@ -451,11 +449,13 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 denpa 本体は nasne では動かない (bun の mipsel は無い) ので、動かすのはエージェントだけです。A と比べて得るものは「LAN を流れるのが TLS になる」ことだけで、負荷と手間は増えます。
 
 - ビルドは `GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0`。74Kc は FPU を持たないので `softfloat` が要る。静的なバイナリ 1 つを `/usr/local/sbin/denpa-px4-agent` に置き、sysvinit のスクリプトで起動する
-- **カーネルは 6.12 (SonyNasne-debian の試験中のもの) が要る。** 公式の 2.6.29 は Go が動作を保証する下限 (2.6.32) より古く、動くかは確かめていない (20 章)
+- **公式の 2.6.29 のカーネルでも動く** (実機の nasne、Debian 7、`2.6.29-ts-mipsisa32r2el` で、Go 1.27 のバイナリが起動し、TLS・API・コマンドの起動まで通った)。Go が動作を保証する下限 (2.6.32) より古いが、足りないシステムコールは `accept4` だけだった (MIPS では 2.6.32 で入った)。Go の標準ライブラリは `accept4` しか使わず `accept4: function not implemented` で待ち受けられないので、**最初の `Accept` が `ENOSYS` で失敗したら、待ち受けの fd の複製を blocking のまま `accept(2)` で待つ代替に切り替える** (`internal/app/listen_linux.go`)。`syscall.Accept` も中で `accept4` を呼ぶので、`SYS_ACCEPT` を直に呼ぶ。6.12 のカーネルは要らない
 - 機材の定義は A の `command` を `["/usr/local/sbin/nasne-recpt1", "{channel}", "-", "-"]`、`serviceArg` を `["--sid", "{service}"]`、`busyExitCode` を 3 に替える。衛星の `:TSID` は `["--tsid", "{tsid}"]` で渡せる (`{tsid}` は `:TSID` の値。無ければ空。`tsidArg` として `serviceArg` と同じ形で足す)。`--dual-tuner` を使うなら `command` に足し、`tuners.json` を 2 台にする
 - `nasne-recpt1 --listen 8301` を同時に動かしてもよい (同じロックを使うので取り合いは成り立つ)
 - 置き場: `TUNERS_FILE` などは `/var/lib/denpa-px4-agent/`。`RAW_DIR` は使わない (録画は denpa の側に置かれる)
-- 負荷: TLS (ChaCha20-Poly1305) で 15 Mbps を 1 本流すぶんは収まる見込み。`--dual-tuner` の 2 本と、読み出しの列 (64MB) × 2 で RAM 248 MB に収まるかは実測で決める。収まらなければ列の上限を環境変数 (`STREAM_QUEUE_BYTES`) で下げる
+- **負荷 (実機の nasne で測った。仕様の見込みは当たらなかった)。** 74Kc には AES の命令も ChaCha20 の最適化も無く、TLS (ChaCha20-Poly1305) は純 Go の実装になる。12 Mbps の TS を 1 本流すと、エージェントの CPU は 1 コアの約 60%、流せたのは 9.6 Mbps で、CPU の約 78% が TLS の暗号化だった (プロファイルは `-tags pprof` のビルドで `CPUPROFILE=<ファイル>` を渡し、`SIGUSR1` で書く)。nasne の ISDB-T の 1 サービスは 10 Mbps 前後なので、**ぎりぎり**。余裕を取るなら置き方 A を使う
+- **メモリは足りる。** mirakc を止めてスワップを切った状態 (バッファを除いた空き 約 200 MB) で、12 Mbps 1 本・同時 2 本・遅い読み手 (溜め込みの上限 16 MiB まで) を試し、エージェントの RSS は待機 4〜8 MB、最大で約 26 MB。バッファを除いた空きは最小でも 約 188 MB だった。`STREAM_QUEUE_BYTES=16777216`・`GOMEMLIMIT=96MiB`・`GOGC=50` を環境に書く
+- **ビルドは `-tags nasne,nethttpomithttp2`。** `nasne` は chardev と pcscd を外し (64 KB 減)、`nethttpomithttp2` は標準ライブラリの HTTP/2 を外す (さらに 385 KB 減。API は HTTP/1.1 だけなので影響しない)。合わせて 8.98 MB → 8.52 MB (5%)。**待機時の RSS は 7.1 MB → 4.4 MB (約 38% 減)**。自分のコードは全体の約 3% (293 KB) で、残りは標準ライブラリ (crypto/tls・runtime・net/http・encoding/json) なので、これ以上の削減は小さい
 - 止めるとき (`SHUTDOWN_WAIT`) に録画が終わるまで待つのは同じ。nasne の電源を落とす仕組みとは合わせない
 
 ## 7. 選局 (共通)
@@ -518,14 +518,14 @@ denpa 本体は nasne では動かない (bun の mipsel は無い) ので、動
 来るのは素の MPEG-2 TS (188 バイト) です。ISDB-C で選んだ TS が分割 TLV のときだけ、px4_drv は TLV パケットの並び (ARIB STD-B32) を出します (chardev も host も同じ共通の処理)。
 
 - 最初の塊を読んだときに形式を決めます。先頭が `0x47` で 188 バイトごとに `0x47` が続けば TS、先頭が `0x7F` なら TLV です。どちらでもなければ 188 の境目を探して TS として同期します
-- TLV は復号せず (ACAS)、そのまま流します。`Content-Type` は `application/x-arib-tlv` です。TS は `video/MP2T`
+- TLV は、A-CAS のカードが開けていれば、MMTP のスクランブルを復号して流します ([b61.md](b61.md))。カードが無い・A-CAS でなければ、そのまま流します。`Content-Type` は `application/x-arib-tlv` です。TS は `video/MP2T`
 
 ### 7.6 TSMF の有効な TS の数 (`X-Denpa-Tsmf-Streams`)
 
 denpa の付属のエージェントは、ISDB-C の選局で TSMF のヘッダーにある有効な TS の数を `X-Denpa-Tsmf-Streams` で返し、denpa はそれを見て `:1` 以降をスキャンします。px4_drv は TSMF の分離を自分の中で行い、ヘッダーを出さず、数を返す手段もありません。
 
 - 最初の実装では、このヘッダーを**返しません**。denpa は 1 本として扱い、TSMF の 2 本目以降の局は見つかりません。既知の制限として README に書きます
-- 2 段目として、px4_drv (自分の fork) に「最後の選局で見たヘッダーの有効な TS の数」を返す口を足します (chardev は ioctl、host は `READ_STATS` の新しい `type`)。名前と番号は px4_drv 側で決めてから、この文書に足します
+- 2 段目として、px4_drvに「最後の選局で見たヘッダーの有効な TS の数」を返す口を足します (chardev は ioctl、host は `READ_STATS` の新しい `type`)。名前と番号は px4_drv 側で決めてから、この文書に足します
 
 ### 7.7 選局の失敗と理由
 
@@ -638,6 +638,9 @@ APDU は 5 つです。CLA は `0x90`、応答の返り値は応答の 5〜6 バ
 - カードへは同時に 1 つだけ送ります (ECM・EMM・契約確認で 1 つのロック)
 - 同じ ECM には同じ鍵を返します (中身をキーにして数秒だけ控える)
 - カードの番号は libaribb25 と同じ読み方で、画面の表 (`ids`) に出ます
+- **A-CAS カード (B-CAS 互換モード)**: 実機の A-CAS カード (ATR `3B F0 13 00 FF 91 81 B1 FE 46 1F 03 19`) は、B-CAS の INT (`90 30 00 00 00`) を `6A 86` の 2 バイトで断ります。開くときは、先に B-CAS の INT を送り、通らなければ P2 を変えた INT を送り直します。通れば A-CAS として扱い、それ以降のコマンドは P2 だけを変えます (CLA・INS・本文・応答の読み方は B-CAS と同じ)。値は実機で確かめました (INT の P2=2 が 57 バイトを返す)。`card` の種類は互換で動くので `B-CAS` と返します
+  - INT: P2 = `02`、IDI: P2 = `01`、ECM: P2 = `02`、EMM: P2 = `01`。契約確認 (`0x3C`) は未確認で、P2 は 0 のまま
+  - 4K の MMT/TLV の復号 (B61) は含みません
 
 ### 9.3 復号の決まり
 
@@ -1002,7 +1005,7 @@ services:
 2. `--card` でカードが読めること (内蔵リーダーの名前が出て、番号が出る)
 3. `--tune px4:/dev/px4video2 T27 --seconds 10 > t27.ts` (Windows と macOS は `px4host:…`) で TS が出ること。`--decode` で復号できること
 4. 衛星 (`--lnb 15v` の要る構成はそれを付けて) `BS15:16625`
-5. PX-MLT 系なら `QC30`・`QC30:1`・`H44`。TBS 5530 なら `T27` と `QC30`
+5. PX-MLT 系なら `QC30`・`QC30:1`・`H44`
 6. サーバとして denpa と組み、チャンネルスキャン → 番組表 → ライブ → 録画。denpa の設定の「受信」で C/N が出ること
 7. 録画中に止めて、録画が終わるまで待つこと
 8. Windows では TVTest と同時に使い、空いている受信機だけを取ること。macOS では px4rec と同時に使うこと
@@ -1022,7 +1025,7 @@ services:
 3. **カードと復号**: pcscd のクライアント、B-CAS、MULTI2、デスクランブラ、EMM、`/denpa/card`、`/denpa/decode`、`--card`・`--decode-file`。適合テストのカードの節を通す
 4. **鍵を配る・貰う**: `CARD_SHARE_PORT`・`CARD_URL`。適合テストの鍵の節を通す
 5. **Windows と macOS の host**: パイプと socket、コマンドの構造体、機材の数え方、DriverHost_PX4 の起動、カードのパイプ、OS の PC/SC。`--tune` で実機
-6. **ISDB-C と J.83B**: 拡張 ioctl と host の `SET_PARAMS`、TLV、TBS 5530 のケーブル、`X-Denpa-Tsmf-Streams` (px4_drv に口を足してから)
+6. **ISDB-C と J.83B**: 拡張 ioctl と host の `SET_PARAMS`、TLV、`X-Denpa-Tsmf-Streams` (px4_drv に口を足してから)
 7. **配布**: Dockerfile、compose の例、Windows の zip、macOS の tar.gz、README
 
 ## 20. 決めていないこと・確かめること
@@ -1035,10 +1038,9 @@ services:
 - 読み出しの塊の大きさと復号の列 (64MB) で、PX-Q3 系 8 受信機の同時録画が追いつくか (地上波 8 本で 20 MB/s)
 - 覚えた PAT・PMT で流し始める仕組み (`PsiMemory`) を最初の実装に入れるか
 - `/denpa/decode` の応答の項目 (付属のエージェントの `Scramble.Decode` の JSON をそのまま写すか)
-- TBS 5530 のケーブル (ISDB-C) は px4_drv 側で実験的。Linux の chardev で `PTX_SET_SYSTEM_MODE(0x40)` が通ることと、host で `ExperimentalISDBC=true` の受信機に `SET_PARAMS{ISDB_C}` が通ることを実機で確かめる
 - macOS で DriverHost_PX4 を root で動かしたときの socket の権限 (全ユーザーが繋げる) と、エージェントを一般ユーザーで動かす構成
 - `cmd` の recisdb の書き方 (`ISDBC-C30_2`・`J83B-H044`) は recisdb の未リリースの枝 (kazuki0824/recisdb-rs#202) のもの。リリースされたら引数の形を確かめ直す
-- nasne の公式カーネル (2.6.29) で Go のバイナリが動くか。Go の下限 (2.6.32) より古いので、動かなければ置き方 B は 6.12 カーネルだけにする
+- nasne の置き方 B で、実際の受信と録画が通るか。公式カーネル (2.6.29) で Go のバイナリが動き、エージェントが起動して API が通るところまでは実機で確かめた ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。アンテナを繋いでいない nasne だったので、TS が流れるところ・`--sid` で局を絞るところ・15 Mbps を TLS で流す負荷は未確認
 - `nasne-recpt1` の HTTP に `--tsid` に当たる指定があるか (無ければ置き方 A では衛星のスロット番号だけ)
 - `singleService` のために denpa の録画の選局に `service` を付ける直しを、denpa 本体のどのバージョンで入れるか。付かない denpa と組んだときは、録画の選局を 400 で断って記録に出す
 - nasne の `--dual-tuner` の既知の問題 (待機プロセスが増える・2 本目の映像の開始が遅れる) が、denpa の切り替えの頻度で起きるか
