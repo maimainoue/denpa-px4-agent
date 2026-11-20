@@ -484,6 +484,9 @@ func (s *Stream) onPMT(pid uint16, sec []byte) {
 		return
 	}
 	progECM := ecmOf(descriptors(sec[12:12+progInfoLen]), ca)
+	if progECM == ecmNone {
+		progECM = 0
+	}
 	for p := 12 + progInfoLen; p+5 <= len(sec)-4; {
 		st := sec[p]
 		epid := uint16(sec[p+1]&0x1F)<<8 | uint16(sec[p+2])
@@ -492,7 +495,9 @@ func (s *Stream) onPMT(pid uint16, sec []byte) {
 			break
 		}
 		e := esInfo{streamType: st, ecmPID: progECM}
-		if x := ecmOf(descriptors(sec[p+5:p+5+l]), ca); x != 0 {
+		if x := ecmOf(descriptors(sec[p+5:p+5+l]), ca); x == ecmNone {
+			e.ecmPID = 0 // この ES は、番組の ECM があっても、スクランブルされていない
+		} else if x != 0 {
 			e.ecmPID = x
 		}
 		s.es[epid] = e
@@ -507,6 +512,10 @@ func (s *Stream) onPMT(pid uint16, sec []byte) {
 		}
 	}
 }
+
+// ecmNone は CA 記述子の PID が 0x1FFF のときで、ARIB では「ECM なし (スクランブルされていない)」の印。ヌルパケットの
+// PID なので、ECM の PID と見なして答えを待つと、来るはずのない ECM を待ち続ける (全サービスを含む TS で起きる)。
+const ecmNone = 0x1FFF
 
 func ecmOf(ds []descriptor, caSys uint16) uint16 {
 	for _, d := range ds {
