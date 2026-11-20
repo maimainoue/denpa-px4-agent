@@ -157,6 +157,8 @@ type Tuner interface {
 
 この表が、対象の機種のすべてです (tsukumijima/px4_drv の「対応デバイス」と同じ)。
 
+nasne (HTTP) は px4_drv の機種ではなく、`cmd` バックエンドの組み込みです ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。
+
 `host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
 
 - Windows と macOS では、DriverHost_PX4 の定義に無い機種は開けません。足すときは DriverHost_PX4.ini と `devices.json` の両方に書きます
@@ -423,6 +425,8 @@ Sony nasne の `nasne-recpt1` のように、「1 回の起動で 1 つの局 (�
 #### 置き方 A: エージェントは別の機械に置き、nasne を HTTP で呼ぶ (勧める)
 
 denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェントを動かし、`cmd` バックエンドで `curl` を起動します。**エージェントを nasne に足さない**ので、MIPS のビルドもカーネルの制限も、TLS の暗号の負荷も nasne には関わりません (nasne 側で動かすのは、今までどおり `nasne-recpt1 --listen 8301` の HTTP だけ)。nasne とエージェントの間は平文の HTTP で、TLS になるのはエージェントと denpa の間です。**負荷の面からも、こちらを勧めます** (置き方 B の負荷は下)。
+
+組み込みの機種表に `Sony nasne (nasne-recpt1 HTTP)` があります。`devices.json` に書く必要はありません。組み込みの定義は次のとおりです。
 
 ```json
 {
