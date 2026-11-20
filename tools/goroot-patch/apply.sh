@@ -8,7 +8,61 @@ DST=${1:?複製先}
 PR=${2:?x/crypto の PR 294 の作業ツリー}
 SRC=${3:-$(go env GOROOT)}
 
-[ -e "$DST" ] && { echo "複製先がもうある: $DST" >&2; exit 1; }
+if [ -e "$DST" ] || [ -L "$DST" ]; then
+  echo "複製先がもうある: $DST" >&2
+  exit 1
+fi
+
+case "$SRC" in
+  /*) ;;
+  *) SRC=$(pwd -P)/$SRC ;;
+esac
+SRC=$(CDPATH= cd -P "$SRC" && pwd -P)
+
+canonicalize_destination() (
+  path=$1
+  case "$path" in
+    /*) ;;
+    *) path=$(pwd -P)/$path ;;
+  esac
+
+  current=/
+  remainder=
+  set -f
+  old_ifs=$IFS
+  IFS=/
+  set -- $path
+  IFS=$old_ifs
+  for component do
+    case "$component" in
+      ""|.) continue ;;
+      ..)
+        if [ -n "$remainder" ]; then
+          remainder=${remainder%/*}
+        else
+          current=$(CDPATH= cd -P "$current/.." && pwd -P) || exit 1
+        fi
+        ;;
+      *)
+        if [ -z "$remainder" ] && [ -d "$current/$component" ]; then
+          current=$(CDPATH= cd -P "$current/$component" && pwd -P) || exit 1
+        else
+          remainder=$remainder/$component
+        fi
+        ;;
+    esac
+  done
+  printf '%s\n' "$current$remainder"
+)
+
+DST_REAL=$(canonicalize_destination "$DST")
+case "$DST_REAL" in
+  "$SRC"|"$SRC"/*)
+    echo "複製先は GOROOT の外に指定してください: $DST" >&2
+    exit 1
+    ;;
+esac
+
 for f in chacha20/chacha_mipsle.go chacha20/chacha_mipsle.s internal/poly1305/sum_mipsle.go internal/poly1305/sum_mipsle.s; do
   [ -f "$PR/$f" ] || { echo "PR 294 の作業ツリーに $f が無い" >&2; exit 1; }
 done
@@ -16,6 +70,7 @@ done
 echo "GOROOT を複製: $SRC -> $DST"
 mkdir -p "$DST"
 cp -R "$SRC/." "$DST/"
+chmod -R u+w "$DST"
 V="$DST/src/vendor/golang.org/x/crypto"
 
 cp "$PR/chacha20/chacha_mipsle.go" "$PR/chacha20/chacha_mipsle.s" "$V/chacha20/"
