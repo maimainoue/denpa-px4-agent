@@ -18,6 +18,15 @@ SRC=$(CDPATH= cd -P "$SRC" && pwd -P)
 canonicalize_destination() (
   path=$1
   case "$path" in
+    [A-Za-z]:[\\/]*)
+      # MSYS・Cygwin では Windows のパス (mkdir・cp もそう読む)。POSIX の形にして検査する。
+      # cygpath が無い環境では、ただの相対パス (名前が "C:" のディレクトリ)
+      if command -v cygpath >/dev/null 2>&1; then
+        path=$(cygpath -u "$path") || exit 1
+      fi
+      ;;
+  esac
+  case "$path" in
     /*) ;;
     *) path=$(pwd -P)/$path ;;
   esac
@@ -52,12 +61,19 @@ canonicalize_destination() (
 )
 
 DST_REAL=$(canonicalize_destination "$DST")
+# ".." を解いた結果が、既にあるパスになることがある (<無いディレクトリ>/../sdk → sdk)
+if [ -e "$DST_REAL" ] || [ -L "$DST_REAL" ]; then
+  echo "複製先がもうある: $DST_REAL" >&2
+  exit 1
+fi
 case "$DST_REAL" in
   "$SRC"|"$SRC"/*)
     echo "複製先は GOROOT の外に指定してください: $DST" >&2
     exit 1
     ;;
 esac
+# 作成・コピー・権限の変更は、検査したパスと同じものに対して行う (元の文字列には ".." や別の書き方が残りうる)
+DST=$DST_REAL
 
 for f in chacha20/chacha_mipsle.go chacha20/chacha_mipsle.s internal/poly1305/sum_mipsle.go internal/poly1305/sum_mipsle.s; do
   [ -f "$PR/$f" ] || { echo "PR 294 の作業ツリーに $f が無い" >&2; exit 1; }
