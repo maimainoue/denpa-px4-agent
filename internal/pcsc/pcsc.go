@@ -1,6 +1,8 @@
 // Package pcsc は pcscd (pcsc-lite) の socket に直接つなぐ、pure Go のクライアント (仕様書 9.1)。
 //
-// プロトコルは pcsc-lite 1.9 の winscard_msg.h と winscard_clnt.c のとおり (バージョン 4.4)。
+// プロトコルは pcsc-lite の winscard_msg.h と winscard_clnt.c のとおり。バージョンは 4.4 (pcsc-lite 1.9) と
+// 4.5 (2.x。増えたのは CMD_GET_READER_EVENTS だけで、使うコマンドの形は同じ) の両方に合わせる。pcscd は版の
+// 完全一致を求めるので、4.5 で繋ぎ、断られたら返ってきた版に合わせて繋ぎ直す。
 // cgo を使わないので、静的なバイナリのまま distroless に置ける。使うのは
 // CMD_VERSION・ESTABLISH_CONTEXT・CMD_GET_READERS_STATE・CONNECT・TRANSMIT・DISCONNECT・RELEASE_CONTEXT だけ。
 //
@@ -17,6 +19,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/card"
@@ -27,8 +30,9 @@ const DefaultSocket = "/run/pcscd/pcscd.comm"
 
 // pcsc-lite のコマンドと定数 (winscard_msg.h・pcsclite.h)。
 const (
-	protoMajor = 4
-	protoMinor = 4
+	protoMajor       = 4
+	protoMinor       = 5 // 最初に名乗る版 (2.x)。1.9 の pcscd なら、返ってきた版に合わせ直す
+	protoMinorLegacy = 4 // pcsc-lite 1.9
 
 	cmdEstablishContext = 0x01
 	cmdReleaseContext   = 0x02
@@ -69,6 +73,7 @@ const (
 	rvUnresponsive   = 0x80100066
 	rvCommError      = 0x80100013
 	rvNoReadersAvail = 0x8010002E
+	rvServiceStopped = 0x8010001E // 版が合わないとき、pcscd がこれと自分の版を返す
 )
 
 var rvNames = map[uint32]string{
@@ -83,6 +88,7 @@ var rvNames = map[uint32]string{
 	rvUnresponsive:   "SCARD_W_UNRESPONSIVE_CARD",
 	rvCommError:      "SCARD_F_COMM_ERROR",
 	rvNoReadersAvail: "SCARD_E_NO_READERS_AVAILABLE",
+	rvServiceStopped: "SCARD_E_SERVICE_STOPPED",
 }
 
 // Error は pcscd が返した返り値。
@@ -105,17 +111,39 @@ type conn struct {
 	ctx  uint32
 }
 
-func dial(sock string) (*conn, error) {
-	c, err := net.DialTimeout("unix", sock, 3*time.Second)
-	if err != nil {
-		return nil, fmt.Errorf("pcscd に繋がりません (%s)", sock)
+// versionMismatch は、pcscd が別の版 (minor) を求めたこと。
+type versionMismatch struct{ minor uint32 }
+
+func (e *versionMismatch) Error() string {
+	return fmt.Sprintf("pcscd のプロトコルは %d.%d です", protoMajor, e.minor)
+}
+
+// dial は pcscd に繋ぐ。minor は覚えている版 (0 なら新しい方から)。pcscd が別の版を求めたら、その版で 1 回だけ繋ぎ直し、
+// 合った版を覚える (pcscd は版の完全一致を求めるので、1.9 と 2.x の両方に繋ぐにはこうする)。
+func dial(sock string, minor *atomic.Uint32) (*conn, error) {
+	m := minor.Load()
+	if m == 0 {
+		m = protoMinor
 	}
-	k := &conn{c: c, sock: sock}
-	if err := k.handshake(); err != nil {
+	for attempt := 0; ; attempt++ {
+		c, err := net.DialTimeout("unix", sock, 3*time.Second)
+		if err != nil {
+			return nil, fmt.Errorf("pcscd に繋がりません (%s)", sock)
+		}
+		k := &conn{c: c, sock: sock}
+		err = k.handshake(m)
+		if err == nil {
+			minor.Store(m)
+			return k, nil
+		}
 		c.Close()
+		var vm *versionMismatch
+		if errors.As(err, &vm) && attempt == 0 && (vm.minor == protoMinor || vm.minor == protoMinorLegacy) {
+			m = vm.minor
+			continue
+		}
 		return nil, err
 	}
-	return k, nil
 }
 
 func (k *conn) close() { k.c.Close() }
@@ -140,11 +168,12 @@ func (k *conn) recv(n int) ([]byte, error) {
 	return b, nil
 }
 
-// handshake は CMD_VERSION でバージョンを合わせ、ESTABLISH_CONTEXT でコンテキストを得る。
-func (k *conn) handshake() error {
+// handshake は CMD_VERSION でバージョンを合わせ、ESTABLISH_CONTEXT でコンテキストを得る。minor は名乗る版。
+// pcscd が別の minor を求めたら (返り値 SCARD_E_SERVICE_STOPPED と、返事に入った pcscd の版)、*versionMismatch を返す。
+func (k *conn) handshake(minor uint32) error {
 	ver := make([]byte, 12)
 	order.PutUint32(ver[0:], protoMajor)
-	order.PutUint32(ver[4:], protoMinor)
+	order.PutUint32(ver[4:], minor)
 	if err := k.send(cmdVersion, ver, nil); err != nil {
 		return err
 	}
@@ -152,11 +181,15 @@ func (k *conn) handshake() error {
 	if err != nil {
 		return fmt.Errorf("pcscd がバージョンに答えません: %w", err)
 	}
-	if rv := order.Uint32(r[8:]); rv != rvOK {
-		return &Error{Op: "バージョンの確認", RV: rv}
+	srvMajor, srvMinor, rv := order.Uint32(r[0:]), order.Uint32(r[4:]), order.Uint32(r[8:])
+	if srvMajor != protoMajor {
+		return fmt.Errorf("pcscd のプロトコルのバージョンが違います (%d.%d。%d.%d か %d.%d が必要です)", srvMajor, srvMinor, protoMajor, protoMinorLegacy, protoMajor, protoMinor)
 	}
-	if major := order.Uint32(r[0:]); major != protoMajor {
-		return fmt.Errorf("pcscd のプロトコルのバージョンが違います (%d.%d。%d.%d が必要です)", major, order.Uint32(r[4:]), protoMajor, protoMinor)
+	if rv == rvServiceStopped && srvMinor != minor {
+		return &versionMismatch{minor: srvMinor}
+	}
+	if rv != rvOK {
+		return &Error{Op: "バージョンの確認", RV: rv}
 	}
 
 	est := make([]byte, 12)
@@ -177,6 +210,8 @@ func (k *conn) handshake() error {
 // Provider は pcscd 経由のカードリーダー。
 type Provider struct {
 	Socket string
+
+	minor atomic.Uint32 // 合わせた pcscd のプロトコルの minor。0 は未確認
 }
 
 var _ card.Provider = (*Provider)(nil)
@@ -201,7 +236,7 @@ func IsInternal(name string) bool {
 
 // List は pcscd が持つリーダーを並べる。名前は取ってきたものをそのまま使う。
 func (p *Provider) List() ([]card.ReaderInfo, error) {
-	k, err := dial(p.Socket)
+	k, err := dial(p.Socket, &p.minor)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +281,7 @@ func (p *Provider) Open(name string) (card.Link, error) {
 	if len(name) >= maxReaderName {
 		return nil, errors.New("リーダーの名前が長すぎます")
 	}
-	k, err := dial(p.Socket)
+	k, err := dial(p.Socket, &p.minor)
 	if err != nil {
 		return nil, err
 	}

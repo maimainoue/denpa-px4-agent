@@ -11,7 +11,8 @@ import (
 	"time"
 )
 
-// fakePcscd は pcsc-lite 1.9 の winscard_msg.h のとおりに答える偽の pcscd。
+// fakePcscd は pcsc-lite の winscard_msg.h のとおりに答える偽の pcscd。版 (major・minor) は本物の pcscd と同じく、
+// 完全に一致したときだけ受ける。合わなければ SCARD_E_SERVICE_STOPPED と自分の版を返す (winscard_svc.c)。
 type fakePcscd struct {
 	t         *testing.T
 	ln        net.Listener
@@ -19,6 +20,7 @@ type fakePcscd struct {
 	readers   []string
 	connectRV uint32
 	major     uint32
+	minor     uint32
 	transmit  func(apdu []byte) []byte
 
 	mu     sync.Mutex
@@ -29,7 +31,7 @@ type fakePcscd struct {
 
 func newFake(t *testing.T) *fakePcscd {
 	t.Helper()
-	f := &fakePcscd{t: t, sock: filepath.Join(t.TempDir(), "pcscd.comm"), major: protoMajor, closed: make(chan struct{}, 8)}
+	f := &fakePcscd{t: t, sock: filepath.Join(t.TempDir(), "pcscd.comm"), major: protoMajor, minor: protoMinor, closed: make(chan struct{}, 8)}
 	ln, err := net.Listen("unix", f.sock)
 	if err != nil {
 		t.Skipf("unix socket を作れません: %v", err)
@@ -66,8 +68,11 @@ func (f *fakePcscd) serve(c net.Conn) {
 		switch cmd {
 		case cmdVersion:
 			r := make([]byte, 12)
+			if order.Uint32(body[0:]) != f.major || order.Uint32(body[4:]) != f.minor {
+				order.PutUint32(r[8:], rvServiceStopped)
+			}
 			order.PutUint32(r[0:], f.major)
-			order.PutUint32(r[4:], protoMinor)
+			order.PutUint32(r[4:], f.minor)
 			c.Write(r)
 		case cmdEstablishContext:
 			r := make([]byte, 12)
@@ -151,6 +156,74 @@ func TestList_プロトコルのバージョンが違えば断る(t *testing.T) 
 	if _, err := New(f.sock).List(); err == nil || !bytes.Contains([]byte(err.Error()), []byte("バージョンが違います")) {
 		t.Errorf("%v", err)
 	}
+}
+
+// pcscd 2.x (4.5) は最初の名乗りで通る。1 回で済む。
+func TestVer_45_ok(t *testing.T) {
+	f := newFake(t)
+	f.readers = []string{"PLEX PX-Q3U4 Smart Card Reader [ID: X] (1) 00 00"}
+	p := New(f.sock)
+	if _, err := p.List(); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.sawCommands(); len(got) < 1 || got[0] != cmdVersion || countCmd(got, cmdVersion) != 1 {
+		t.Errorf("版の確認は 1 回のはず: %v", got)
+	}
+	if p.minor.Load() != protoMinor {
+		t.Errorf("覚えた版: %d", p.minor.Load())
+	}
+}
+
+// pcscd 1.9 (4.4) は 4.5 を断る (SCARD_E_SERVICE_STOPPED と自分の版)。返ってきた版で繋ぎ直し、その版を覚える。
+func TestVer_44_retry(t *testing.T) {
+	f := newFake(t)
+	f.minor = protoMinorLegacy
+	f.readers = []string{"PLEX PX-Q3U4 Smart Card Reader [ID: X] (1) 00 00"}
+	p := New(f.sock)
+	got, err := p.List()
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%v %v", got, err)
+	}
+	if n := countCmd(f.sawCommands(), cmdVersion); n != 2 {
+		t.Errorf("版の確認は 2 回 (4.5 → 4.4) のはず: %d", n)
+	}
+	if p.minor.Load() != protoMinorLegacy {
+		t.Errorf("覚えた版: %d", p.minor.Load())
+	}
+	// 2 回目からは、覚えた版でいきなり通る
+	if _, err := p.List(); err != nil {
+		t.Fatal(err)
+	}
+	if n := countCmd(f.sawCommands(), cmdVersion); n != 3 {
+		t.Errorf("2 回目は版の確認が 1 回だけのはず (合計 3): %d", n)
+	}
+}
+
+// 知らない minor (4.3 など。形式が違う) には合わせず、断る。
+func TestVer_43_refuse(t *testing.T) {
+	f := newFake(t)
+	f.minor = 3
+	_, err := New(f.sock).List()
+	if err == nil {
+		t.Fatal("4.3 には繋がないはず")
+	}
+	var vm *versionMismatch
+	if !errors.As(err, &vm) || vm.minor != 3 {
+		t.Errorf("%v", err)
+	}
+	if n := countCmd(f.sawCommands(), cmdVersion); n != 1 {
+		t.Errorf("繋ぎ直さないはず: %d", n)
+	}
+}
+
+func countCmd(calls []uint32, cmd uint32) int {
+	n := 0
+	for _, c := range calls {
+		if c == cmd {
+			n++
+		}
+	}
+	return n
 }
 
 func TestOpen_排他で開いてAPDUを送る(t *testing.T) {
