@@ -20,6 +20,8 @@ cp -r tools/aeadbench /work/aead-base && cp -r tools/aeadbench /work/aead-pr
 export GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0
 (cd /work/aead-base && go build -o aead-base .)
 (cd /work/aead-pr   && go build -o aead-pr .)
+# MIPS32r2 以上 (nasne の 74Kc) では、ROTR を使う版も作れる (-D=GOMIPS_r2。r1 の機材では動かない)
+(cd /work/aead-pr   && go build -asmflags='all=-D=GOMIPS_r2' -o aead-pr-r2 .)
 ```
 
 nasne に送って動かします (`/tmp` に置き、終わったら消す)。
@@ -43,5 +45,8 @@ ssh nasne 'chmod +x /tmp/aead-base /tmp/aead-pr; /tmp/aead-base; /tmp/aead-pr; r
 | Seal 16 KiB | 26.6〜28.7 | 88.3〜90.7 | 約 3.2 倍 |
 | Open 16 KiB | 24.7〜28.4 | 83.9〜93.2 | 約 3.2 倍 |
 
-`ctsum=07c52f1f` で一致 (長さ 0〜300 のみ)。`GOMIPS_r2` が定義されないので `ROTR` は使われず、`SLL`/`SRL`/`OR` の経路。
-未確認: 大きいサイズ・非アライン・認証の失敗・RFC 8439 のテストベクタ・`crypto/tls` に差し込んだ全体の負荷。
+`ctsum=07c52f1f` で一致 (長さ 0〜300 のみ)。上の表の PR 294 は、`GOMIPS_r2` が定義されないので `ROTR` は使われず、`SLL`/`SRL`/`OR` の経路。
+
+`-D=GOMIPS_r2` の版 (`aead-pr-r2`、`ROTR` を使う) は、同じ条件で Seal 1316 B が 104.9〜111.8、Seal 16 KiB が 115.7〜134.2、Open 16 KiB が 129.1〜139.8 Mbps/CPU 秒 (現行の約 4.3〜4.9 倍)。`ctsum` は `07c52f1f` で同じ。
+
+このツールの範囲外 (別に確認した): x/crypto のテスト (RFC 8439 のベクタ、汎用実装との乱数照合、非アライン、バッファの重なり) の実機での実行、`crypto/tls` に差し込んだ全体の負荷、実放送でのエージェントの CPU。結果と手順は [`../goroot-patch/README.md`](../goroot-patch/README.md) とイシュー #3。
