@@ -87,3 +87,16 @@ func (c Channel) Values() Values {
 	}
 	return v
 }
+
+// ShiftedFreqKHz は SKY でずらした周波数を持つチャンネルの、ずらした周波数 (仕様書 7.2)。
+// H11〜H12・H26〜H28・H44 が対象で、それ以外は 0。ずらす量は +6500 kHz。
+func (c Channel) ShiftedFreqKHz() uint32 {
+	if c.Prefix != "H" {
+		return 0
+	}
+	switch c.Number {
+	case 11, 12, 26, 27, 28, 44:
+		return c.Values().FreqKHz + 6500
+	}
+	return 0
+}

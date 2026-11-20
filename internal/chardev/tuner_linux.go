@@ -138,7 +138,7 @@ func (t *Tuner) Tune(tn backend.Tuning) error {
 		}
 	}
 	v := ch.Values()
-	if err := t.tuneLocked(v); err != nil {
+	if err := t.tuneLocked(v, ch.ShiftedFreqKHz()); err != nil {
 		return err
 	}
 	if err := ioctl(t.f, ptxStartStreaming, 0); err != nil && !errors.Is(err, syscall.EALREADY) {
@@ -152,18 +152,26 @@ func (t *Tuner) Tune(tn backend.Tuning) error {
 // tuneLocked は方式と周波数を渡して、ロックを待つ (仕様書 4.4 の 3)。
 //   - GR・BS・CS と ISDB-C の 0 本目: PTX_SET_SYSTEM_MODE → PTX_SET_CHANNEL
 //   - ISDB-C の 1 本目以降と SKY (J.83B): PTXT_SET_PARAMS → PTXT_TUNE (PTX_SET_SYSTEM_MODE は J.83B を受けない)
-func (t *Tuner) tuneLocked(v channel.Values) error {
+//   - SKY は、元の周波数で同期しなければずらした周波数でもう一度 (仕様書 7.2)。shifted が 0 なら再試行しない。
+func (t *Tuner) tuneLocked(v channel.Values, shifted uint32) error {
 	if v.System == channel.SystemJ83 || (v.System == channel.SystemC && v.Stream > 0) {
 		props := tsmfProps(v.System, v.Stream)
-		p := ptxtParams{System: v.System, Freq: v.FreqKHz, NumProp: uint32(len(props))}
-		if len(props) > 0 {
-			p.Prop = uint64(uintptr(unsafe.Pointer(&props[0])))
+		tuneOnce := func(freq uint32) error {
+			p := ptxtParams{System: v.System, Freq: freq, NumProp: uint32(len(props))}
+			if len(props) > 0 {
+				p.Prop = uint64(uintptr(unsafe.Pointer(&props[0])))
+			}
+			err := ioctl(t.f, ptxtSetParams, uintptr(unsafe.Pointer(&p)))
+			if err == nil {
+				err = ioctl(t.f, ptxtTune, 0)
+			}
+			runtime.KeepAlive(props)
+			return err
 		}
-		err := ioctl(t.f, ptxtSetParams, uintptr(unsafe.Pointer(&p)))
-		if err == nil {
-			err = ioctl(t.f, ptxtTune, 0)
+		err := tuneOnce(v.FreqKHz)
+		if err != nil && v.System == channel.SystemJ83 && shifted != 0 && errors.Is(err, syscall.EAGAIN) {
+			err = tuneOnce(shifted)
 		}
-		runtime.KeepAlive(props)
 		return t.tuneErr(err, v)
 	}
 	mode := uintptr(modeISDBT)

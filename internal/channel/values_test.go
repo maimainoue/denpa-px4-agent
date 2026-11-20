@@ -64,3 +64,36 @@ func TestValues_衛星のSTREAM_IDはTSIDか0(t *testing.T) {
 		t.Error("StreamID は 0")
 	}
 }
+
+func TestShiftedFreqKHz_SKYのずらした周波数(t *testing.T) {
+	cases := []struct {
+		in   string
+		want uint32
+	}{
+		{"H01", 0},
+		{"H10", 0},
+		{"H11", 93250 + 10*6500 + 6500},
+		{"H12", 93250 + 11*6500 + 6500},
+		{"H13", 0},
+		{"H25", 0},
+		{"H26", 93250 + 25*6500 + 6500},
+		{"H27", 93250 + 26*6500 + 6500},
+		{"H28", 93250 + 27*6500 + 6500},
+		{"H29", 0},
+		{"H43", 0},
+		{"H44", 93250 + 43*6500 + 6500},
+		{"H45", 0},
+		{"T27", 0},
+		{"BS15", 0},
+		{"QC30", 0},
+	}
+	for _, c := range cases {
+		ch, err := Parse(c.in)
+		if err != nil {
+			t.Fatalf("%s: %v", c.in, err)
+		}
+		if got := ch.ShiftedFreqKHz(); got != c.want {
+			t.Errorf("%s: %d (want %d)", c.in, got, c.want)
+		}
+	}
+}
