@@ -13,10 +13,6 @@ if [ -e "$DST" ] || [ -L "$DST" ]; then
   exit 1
 fi
 
-case "$SRC" in
-  /*) ;;
-  *) SRC=$(pwd -P)/$SRC ;;
-esac
 SRC=$(CDPATH= cd -P "$SRC" && pwd -P)
 
 canonicalize_destination() (
@@ -40,19 +36,19 @@ canonicalize_destination() (
         if [ -n "$remainder" ]; then
           remainder=${remainder%/*}
         else
-          current=$(CDPATH= cd -P "$current/.." && pwd -P) || exit 1
+          current=$(CDPATH= cd -P "${current%/}/.." && pwd -P) || exit 1
         fi
         ;;
       *)
-        if [ -z "$remainder" ] && [ -d "$current/$component" ]; then
-          current=$(CDPATH= cd -P "$current/$component" && pwd -P) || exit 1
+        if [ -z "$remainder" ] && [ -d "${current%/}/$component" ]; then
+          current=$(CDPATH= cd -P "${current%/}/$component" && pwd -P) || exit 1
         else
           remainder=$remainder/$component
         fi
         ;;
     esac
   done
-  printf '%s\n' "$current$remainder"
+  printf '%s\n' "${current%/}$remainder"
 )
 
 DST_REAL=$(canonicalize_destination "$DST")
