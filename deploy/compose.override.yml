@@ -1,0 +1,20 @@
+# denpa の compose.override.yml です。仕様書 16 章。
+# denpa の compose.yml と同じフォルダに置き、
+#   docker compose -f compose.yml -f compose.override.yml up -d
+# で、denpa 付属のエージェントの代わりにこのエージェントを使います。
+# pcscd はホストの socket (/run/pcscd) を渡しています。
+# コンテナの中で pcscd を動かすときは、この行を外してください
+# (両方で動かすと競合します)。
+services:
+  tuner-agent:
+    image: ghcr.io/maimainoue/denpa-px4-agent:latest
+    cap_add: !reset []
+    device_cgroup_rules: !override
+      - "c *:* rmw"
+    volumes: !override
+      - ./config:/config
+      - denpa-recorded:/media/raw
+      - /dev:/dev
+      - /sys:/sys:ro
+      - /run/pcscd:/run/pcscd
+    stop_grace_period: 6h5m

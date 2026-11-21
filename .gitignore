@@ -3,3 +3,4 @@
 *.test
 client.crt
 client.key
+dist/
