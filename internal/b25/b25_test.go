@@ -225,6 +225,48 @@ func TestStream_鍵が来るまで溜める(t *testing.T) {
 	}
 }
 
+// pmtWithNullCA は ES を 2 つ持つ PMT。1 つ目は ecmPID の ECM で復号する映像 (0x1B)、2 つ目 (0x0D) は CA 記述子の PID が
+// 0x1FFF (ARIB で「ECM なし = スクランブルされていない ES」の印)。
+func pmtWithNullCA(pmtPID, esPID, ecmPID, freeESPID uint16) []byte {
+	body := []byte{0xE1, 0x01, 0xF0, 0x00}
+	d := []byte{0x09, 0x04, 0x00, 0x05, 0xE0 | byte(ecmPID>>8), byte(ecmPID)}
+	body = append(body, 0x1B, 0xE0|byte(esPID>>8), byte(esPID), 0xF0, byte(len(d)))
+	body = append(body, d...)
+	nul := []byte{0x09, 0x04, 0x00, 0x05, 0xFF, 0xFF}
+	body = append(body, 0x0D, 0xE0|byte(freeESPID>>8), byte(freeESPID), 0xF0, byte(len(nul)))
+	body = append(body, nul...)
+	return psiPacket(pmtPID, section(0x02, 1, body))
+}
+
+// 全サービスを含む TS (PX-Q3U4 など) では、一部の ES の CA 記述子が PID 0x1FFF (ECM なし) になる。これを ECM の PID と
+// 見なして答えを待つと、来るはずのない ECM を待ち続けて、溜めた量の上限 (8 MiB、17 Mbps で約 4 秒) まで何も出ない。
+func TestStream_CA記述子のPIDが0x1FFFなら_ECMを待たずに出す(t *testing.T) {
+	card := &fakeCard{code: 0x0800}
+	s := NewStream(card, t.Logf)
+	s.SetDecrypt(true)
+	plain := pesPayload(1)
+	free := tsPacket(0x103, true, 0, pesPayload(3))
+	in := concat(
+		patPacket(0x100), pmtWithNullCA(0x100, 0x101, 0x102, 0x103),
+		ecmPacket(0x102, []byte{1, 2, 3}),
+		scrambledES(0x101, oddKey, true, plain),
+		free,
+	)
+	ps := packets(s.Process(in))
+	if len(ps) != 5 {
+		t.Fatalf("ECM が答えたらすぐに出すはず (0x1FFF の ECM は待たない): %d パケット", len(ps))
+	}
+	if !bytes.Equal(ps[3][4:], plain) || ps[3][3]>>6 != 0 {
+		t.Errorf("復号できない (tsc=%d)", ps[3][3]>>6)
+	}
+	if !bytes.Equal(ps[4], free) {
+		t.Errorf("ECM の無い ES はそのまま")
+	}
+	if _, u := s.Stats(); u != 0 {
+		t.Errorf("復号できなかった数: %d", u)
+	}
+}
+
 func TestStream_契約が無いと答えたらスクランブルのまま流す(t *testing.T) {
 	card := &fakeCard{code: 0xA023}
 	s := NewStream(card, t.Logf)
