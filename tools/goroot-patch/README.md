@@ -4,7 +4,7 @@ nasne (MIPS 74Kc) のエージェントで、TLS の ChaCha20-Poly1305 を速く
 
 Go の `crypto/tls` は、GOROOT の中の `src/vendor/golang.org/x/crypto` にある実装を使います。アプリ側の `go.mod` の `replace` では差し替えられないので、**GOROOT を複製して、複製側だけに** golang/crypto の [PR 294](https://github.com/golang/crypto/pull/294) (MIPSLE の ChaCha20・Poly1305 のアセンブリ) を当てます。元の GOROOT は触りません。
 
-**状態: 検討中。今のリリースのバイナリには入っていません。** 当てた GOROOT の維持 (Go の更新のたびに当て直し、セキュリティ修正の追従) が要ります。
+**状態: nasne 向けのリリースは、このツールで当てたアセンブリ入りのビルドにする (方針は[イシュー #3](https://github.com/maimainoue/denpa-px4-agent/issues/3) で決めた)。** リリースの手順は `scripts/build-nasne.sh` (取り込み済みの固定のコピー `third_party/x-crypto-mipsle` を、`apply.sh` で当てる)。当てた GOROOT の維持 (Go の更新のたびに当て直し、セキュリティ修正の追従) が要ります。このディレクトリの手順は、PR 294 の最新を試すとき (2 番目の引数に、PR の作業ツリーを渡す) の、開発用です。
 
 ## 使い方
 
