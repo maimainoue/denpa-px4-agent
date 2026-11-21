@@ -44,7 +44,7 @@ go build ./cmd/denpa-px4-agent
 GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0   go build -trimpath -tags nasne,nethttpomithttp2 -ldflags "-s -w" -o denpa-px4-agent ./cmd/denpa-px4-agent
 ```
 
-実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。実放送の約 16.5 Mbps を TLS で流すと、エージェントは 1 コアの約 90%、コア全体は 94〜97% で、余裕がほとんど無い。大半は TLS の暗号 (純 Go の ChaCha20-Poly1305) です)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。暗号の MIPS アセンブリ化 (エージェントの CPU が約半分になった) は検討中です ([#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。
+実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。実放送の約 16.5 Mbps を TLS で流すと、エージェントは 1 コアの約 90%、コア全体は 94〜97% で、余裕がほとんど無い。大半は TLS の暗号 (純 Go の ChaCha20-Poly1305) です。さらに denpa は、視聴中に同じ TS をロゴの取得でもう 1 本読み続けるので、実際には 2 本ぶん要ります)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。暗号の MIPS アセンブリ化 (エージェントの CPU が約半分になり、denpa の視聴 (2 本) でも 1 コアに収まった) は検討中です ([#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。
 
 ### 未実装・未確認
 
