@@ -450,7 +450,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS・Windows) でエー�
 
 #### B-CAS なしで使う: nasne は生の TS を出し、復号はエージェントが行う
 
-`nasne-recpt1` の `--no-bcas` (HTTP は `?bcas=0`) を付けると、**この `--no-bcas` は、[maimainoue/SonyNasne-debian](https://github.com/maimainoue/SonyNasne-debian) の fork にしかありません** (2026-11-21 のコミット 4db1494 以降。上の本家 [mar1mo-41414/SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1` には、まだありません)。nasne は B-CAS を見ず (ACTIVATE も、機材の中の復号も使わず)、**復号しない生の TS (全 PID)** を出します。`--sid`・`?sid=` は無視されます。B-CAS を挿していない nasne でも選局できます (標準の機種では、B-CAS が無いと 500 `secured stream` になる)。復号は、エージェントが、自分のカードか `CARD_URL` で貰う鍵 ([9.5](#95-鍵を配る貰う)) で行います。本家などの対応していない版の `nasne-recpt1` で `bcas=0` がどう扱われるかは、確かめていません。
+`nasne-recpt1` の `--no-bcas` (HTTP は `?bcas=0`) を付けると、**この `--no-bcas` は、[maimainoue/SonyNasne-debian](https://github.com/maimainoue/SonyNasne-debian) の fork にしかありません** (2026-11-21 のコミット 4db1494 以降。上の本家 [mar1mo-41414/SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1` には、まだありません)。nasne は B-CAS を見ず (ACTIVATE も、機材の中の復号も使わず)、**復号しない生の TS (全 PID)** を出します。`--sid`・`?sid=` は無視されます。B-CAS を挿していない nasne でも選局できます (標準の機種では、B-CAS が無いと 500 `secured stream` になる)。復号は、エージェントが、自分のカードか `CARD_URL` で貰う鍵 ([9.5](#95-鍵を配る貰う)) で行います。**対応していない版の `nasne-recpt1` は、`bcas=0` を無視します** (2026-11-10 の版を、B-CAS が無い nasne で確かめた。`?bcas=0` も `?bcas=0&sid=…` も、通常の要求と同じに約 6 秒で 500 `secured stream` になる)。fork の版に入れ替えるまで、この機種は使えません。
 
 組み込みの機種表に `Sony nasne (nasne-recpt1 HTTP raw)` があります (`devices.json` は要りません)。
 
@@ -469,6 +469,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS・Windows) でエー�
 - **`decryptedByDevice` も `singleService` も書かない (false)。** PX4 などと同じ経路で、エージェントが PAT・PMT・ECM を読んで復号します。`/denpa/card` は実際のカードのリーダーを出し、契約確認 (`POST /denpa/card/confirm`) と `POST /denpa/decode` も使えます。カードが無いと、鍵の要る利用者 (録画・ライブ) は復号できません。生の TS は全部の局を含むので、**同じチャンネルの別の局は、1 つの選局に相乗りできます** (nasne への HTTP は 1 本)。`service` は、復号する局を選ぶのに使い、nasne には渡しません
 - 503 (使用中)・404 (同期しなかった)・その他の失敗の扱いは、B-CAS ありの機種と同じです (上の `url` の機種の決まり)
 - 実機で確かめた (2026-11-21、nasne と Linux のエージェント、本物の B-CAS)。ch=21 の `?bcas=0` は、約 95% のパケットがスクランブルされたままで、CAT と複数の局 (sid 1056・1057・1058・1059) の PID を含む。エージェントで復号した局 1056 の 105,298 パケットは、スクランブルの印が 0 で、ffprobe で MPEG-2 1440×1080・AAC・字幕を確認した。局 1056 と 1057 を同時に開いても、nasne への HTTP は 1 本で、どちらも全パケットが復号された
+- **B-CAS が無い nasne で確かめた (2026-11-21、2 台目の nasne。ACTIVATE が失敗し続ける機材)。** 通常の要求 (`?sid=…`) は 500 `secured stream` (約 5.7 秒) で、同じ機材の fork の版の `?bcas=0` は 200 の生の TS (ch=21、8 秒で 90,112 パケット、96% がスクランブルのまま、30 の PID)。**最終形も通った**: その生の TS を、エージェント (Windows) が `CARD_URL` で別の機械 (docker256、本物の B-CAS) の鍵を貰って復号し、局 1056 (153,948 パケット) と 1057 (92,160 パケット) を同時に開いて、どちらもスクランブルの印が 0 (nasne への HTTP は 1 本、2 つ目の応答は 2 ms で始まった)。このとき、`/denpa/card` は `source: "remote"` と配る側のカード番号を返した。BS・CS は、この nasne に衛星のアンテナがつながっていないらしく、404 (`衛星ロックしなかった`) で、確かめていない
 - 負荷: nasne は B-CAS も復号も使わないので、復号の CPU は nasne に載らない (復号はエージェントを動かす機械で行う)。LAN を流れる量は、復号済みの TS と同じ (ch=21 で約 17 Mbps)。**エージェントを nasne の上で動かす置き方 B では、復号が nasne の 1 コアに載るので、勧めない**。置き方 B で使うなら、`command` に `--no-bcas` を足し (`["/usr/local/sbin/nasne-recpt1", "--no-bcas", "{channel}", "-", "-"]`)、`decryptedByDevice`・`singleService`・`serviceArg` は書かず、カードは `CARD_URL` で貰う (nasne にはカードリーダーが無い。`CARD_URL` は実装中: [#18](https://github.com/maimainoue/denpa-px4-agent/issues/18))
 
 #### 置き方 B: エージェントを nasne の上で動かす
