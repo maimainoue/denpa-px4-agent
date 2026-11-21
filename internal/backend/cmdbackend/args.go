@@ -51,8 +51,12 @@ func BuildArgs(def *devices.Def, p Params) []string {
 		"{lnb}", strings.Join(lnbArgs, " "),
 	)
 
+	template := def.Command
+	if def.IsHTTP() {
+		template = []string{def.URL} // 展開した URL が 1 要素で返る
+	}
 	var out []string
-	for _, a := range def.Command {
+	for _, a := range template {
 		switch a {
 		case "{channel}":
 			out = append(out, p.Channel...)

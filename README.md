@@ -52,7 +52,7 @@ VERSION=v0.1.0 bash scripts/build-nasne.sh
 
 ### Docker とリリース
 
-タグ `v*` を push すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして、GHCR に `ghcr.io/maimainoue/denpa-px4-agent:latest` などを公開します。Actions から手動で実行したときは、`dev-<短い SHA>` のタグで出します。Docker のイメージには `curl` が無いので、nasne (HTTP) の組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。
+タグ `v*` を push すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして、GHCR に `ghcr.io/maimainoue/denpa-px4-agent:latest` などを公開します。Actions から手動で実行したときは、`dev-<短い SHA>` のタグで出します。nasne (HTTP) の組み込みは、`curl` を使わずエージェントが HTTP で直接読むので、Docker のイメージでも使えます ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。
 
 手元で動かすときは、ホストの単一のプラットフォームにして、`--load` を足します。
 

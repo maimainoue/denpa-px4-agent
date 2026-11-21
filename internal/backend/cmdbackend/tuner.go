@@ -2,6 +2,7 @@ package cmdbackend
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -128,8 +129,14 @@ func (t *tuner) Tune(tn backend.Tuning) error {
 	}
 	_ = t.Stop()
 
-	t.logf("%s: コマンドを起動します: %s", tn.Channel, strings.Join(args, " "))
-	s, err := t.startSession(args)
+	var s *session
+	if t.def.IsHTTP() {
+		t.logf("%s: HTTP で取りに行きます: %s", tn.Channel, args[0])
+		s, err = t.startHTTPSession(args[0])
+	} else {
+		t.logf("%s: コマンドを起動します: %s", tn.Channel, strings.Join(args, " "))
+		s, err = t.startSession(args)
+	}
 	if err != nil {
 		return err
 	}
@@ -247,6 +254,9 @@ func (t *tuner) exited(s *session, typ string) error {
 	default:
 		return fmt.Errorf("%s: %w", t.spec.Name, backend.ErrNoLock)
 	}
+	if t.def.IsHTTP() {
+		return t.httpExited(s, typ)
+	}
 	code := s.exitCode()
 	t.logf("コマンドが TS を出さずに終わりました (終了コード %d)", code)
 	if t.def.BusyExitCode != nil && code == *t.def.BusyExitCode {
@@ -323,9 +333,15 @@ type firstResult struct {
 }
 
 type session struct {
-	cmd   *exec.Cmd
-	r     *os.File // 子の標準出力
+	cmd   *exec.Cmd          // HTTP のときは nil
+	r     *os.File           // 子の標準出力 (HTTP のときは、本文を流すパイプ)
 	grace time.Duration
+
+	// HTTP のとき (startHTTPSession)。done を閉じる前に書く。
+	cancel     context.CancelFunc
+	httpStatus int    // 応答のステータス。応答が無ければ 0
+	httpErr    error  // 応答が取れなかった、本文の途中で切れた
+	httpBody   string // 200 でないときの本文の先頭 (記録に出す)
 
 	firstCh chan firstResult
 	done    chan struct{} // 子が終わったら閉じる。閉じる前に waitErr を書く
@@ -355,6 +371,17 @@ func (s *session) exitCode() int {
 func (s *session) stop() {
 	s.stopped.Store(true)
 	s.abortOnce.Do(func() { close(s.abort) })
+	if s.cmd == nil { // HTTP。要求を取り消し、読み手を閉じて、書いている側を止める
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.r.Close()
+		select {
+		case <-s.done:
+		case <-time.After(s.grace):
+		}
+		return
+	}
 	select {
 	case <-s.done:
 	default:
@@ -402,7 +429,11 @@ func (r *tsReader) Read(p []byte) (int, error) {
 	}
 	select {
 	case <-s.done:
-		if code := s.exitCode(); code != 0 {
+		if s.cmd == nil {
+			if s.httpErr != nil {
+				return 0, fmt.Errorf("HTTP の本文が途中で切れました (%v)", s.httpErr)
+			}
+		} else if code := s.exitCode(); code != 0 {
 			return 0, fmt.Errorf("コマンドが終了しました (終了コード %d)", code)
 		}
 	default:

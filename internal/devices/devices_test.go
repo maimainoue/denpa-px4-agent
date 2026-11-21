@@ -158,17 +158,17 @@ func TestBuiltin_nasneはHTTPで呼ぶ(t *testing.T) {
 	if !d.IsCmd() || d.ChannelFormat != FormatRecpt1 || !d.SingleService || !d.DecryptedByDevice {
 		t.Errorf("nasne の定義: %+v", d)
 	}
-	wantCmd := []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"}
-	if len(d.Command) != len(wantCmd) {
-		t.Fatalf("command: %v", d.Command)
+	if len(d.Command) != 0 {
+		t.Errorf("curl は使わない (command は空): %v", d.Command)
 	}
-	for i := range wantCmd {
-		if d.Command[i] != wantCmd[i] {
-			t.Errorf("command[%d]: %q (want %q)", i, d.Command[i], wantCmd[i])
-		}
+	if want := "http://{device}:8301/tuner/{channel}{sidQuery}"; d.URL != want || !d.IsHTTP() {
+		t.Errorf("url: %q (want %q)", d.URL, want)
 	}
-	if d.BusyExitCode == nil || *d.BusyExitCode != 22 {
-		t.Errorf("busyExitCode: %v (want 22)", d.BusyExitCode)
+	if d.BusyExitCode != nil {
+		t.Errorf("busyExitCode は url では使わない: %v", *d.BusyExitCode)
+	}
+	if err := d.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
 	}
 	if got := d.Receivable(); len(got) != 3 || got[0] != "GR" || got[1] != "BS" || got[2] != "CS" {
 		t.Errorf("receivable: %v", got)

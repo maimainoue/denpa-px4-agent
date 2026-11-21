@@ -6,6 +6,7 @@ package cmdbackend
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ type Config struct {
 type Backend struct {
 	cfg  Config
 	defs *devices.Defs
+	http *http.Client // url の機種が使う
 }
 
 var _ backend.Backend = (*Backend)(nil)
@@ -63,7 +65,7 @@ func New(cfg Config) *Backend {
 	if cfg.FakeTune != "" {
 		defs.Put(devices.Fake(cfg.FakeTune))
 	}
-	return &Backend{cfg: cfg, defs: defs}
+	return &Backend{cfg: cfg, defs: defs, http: newHTTPClient(cfg.FirstTSTimeout)}
 }
 
 // Detect は何も見つけない。cmd の機材は tuners.json に device を手で書く (6)。
@@ -116,7 +118,7 @@ func validHost(s string) bool {
 // `/`・`#`・`?`・`@`・`:`・空白が入ると、接続先のホスト・ポート・パスを変えられてしまう。
 // {device} だけの要素は別の引数として渡るので、検証しない。
 func checkDeviceHost(def *devices.Def, device string) error {
-	for _, args := range [][]string{def.Command, def.ServiceArg, def.TsidArg} {
+	for _, args := range [][]string{def.Command, {def.URL}, def.ServiceArg, def.TsidArg} {
 		for _, a := range args {
 			if a != "{device}" && strings.Contains(a, "{device}") {
 				if !validHost(device) {

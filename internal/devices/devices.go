@@ -47,6 +47,9 @@ type Def struct {
 
 	// cmd バックエンド (6.1)
 	Command       []string            `json:"command,omitempty"`
+	// URL は curl を使わずに、エージェントが HTTP の GET で TS を直接読む機種 (6.5)。command とは同時に書けない。
+	// {device}・{channel}・{sidQuery} などは command と同じに展開する。503 は使用中 (409)、404 は同期しなかった。
+	URL           string              `json:"url,omitempty"`
 	ChannelFormat string              `json:"channelFormat,omitempty"`
 	LnbArg        map[string][]string `json:"lnbArg,omitempty"`
 	Env           map[string]string   `json:"env,omitempty"`
@@ -72,8 +75,11 @@ type Host struct {
 	ReceiverGUIDs []string `json:"receiverGuids,omitempty"`
 }
 
-// IsCmd は cmd バックエンドの機種か。
-func (d *Def) IsCmd() bool { return len(d.Command) > 0 }
+// IsCmd は cmd バックエンドの機種か (command を起動するものと、url を HTTP で読むもの)。
+func (d *Def) IsCmd() bool { return len(d.Command) > 0 || d.URL != "" }
+
+// IsHTTP は HTTP で直接読む機種か。
+func (d *Def) IsHTTP() bool { return d.URL != "" }
 
 // Receivable はその機材が受けられる種別 (cmd は受信機 1 つ)。
 func (d *Def) Receivable() []string {
@@ -122,7 +128,17 @@ func (d *Def) Validate() error {
 	if !d.IsCmd() {
 		return nil
 	}
-	if strings.TrimSpace(d.Command[0]) == "" {
+	if d.IsHTTP() {
+		if len(d.Command) > 0 {
+			return errors.New("command と url は同時に書けません")
+		}
+		if !strings.HasPrefix(d.URL, "http://") || len(d.URL) <= len("http://") {
+			return fmt.Errorf("url は http:// で始めます (%s)", d.URL)
+		}
+		if len(d.ServiceArg) > 0 || len(d.TsidArg) > 0 || d.BusyExitCode != nil {
+			return errors.New("url のときは serviceArg・tsidArg・busyExitCode は使いません (局と使用中の判定は URL と HTTP のステータスで決まります)")
+		}
+	} else if strings.TrimSpace(d.Command[0]) == "" {
 		return errors.New("command の先頭 (実行ファイル) が空です")
 	}
 	switch d.ChannelFormat {
