@@ -22,6 +22,8 @@ func repeat(n int, types ...string) []Receiver {
 	return recv(list...)
 }
 
+func intPtr(v int) *int { return &v }
+
 var px4Receivers = func() []Receiver {
 	return recv(rx("BS", "CS"), rx("BS", "CS"), rx("GR"), rx("GR"))
 }
@@ -72,5 +74,16 @@ func Builtin() *Defs {
 	one("PIXELA PIX-DT295 Rev.02", "06b8:105c", "dt295video", true, "GR")
 	one("I-O DATA GV-MVP/XZ", "04bb:0530", "xzvideo", true, "GR")
 	one("Siano RIO", "3275:0080", "px4video", false, "GR")
+
+	// Sony nasne (HTTP) は仕様書 6.5 の置き方 A。devices.json を書かなくても tuners.json だけで使える。
+	// busyExitCode は 22: curl -f が nasne の 503 で 22 で終わる。{device} は tuners.json の device の末尾 (ホスト名か IP)。
+	s.Put(Def{Model: "Sony nasne (nasne-recpt1 HTTP)",
+		Command:       []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"},
+		ChannelFormat: FormatRecpt1,
+		SingleService: true, DecryptedByDevice: true,
+		BusyExitCode: intPtr(22),
+		Receivers:    recv(rx("GR", "BS", "CS")),
+		LNB:          []int{},
+	})
 	return s
 }
