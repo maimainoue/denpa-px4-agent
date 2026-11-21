@@ -2,6 +2,7 @@ package cardshare
 
 import (
 	"bytes"
+	"errors"
 	"slices"
 	"testing"
 
@@ -39,6 +40,16 @@ func TestWireInit(t *testing.T) {
 	}
 	if _, err := ReadInit(body[:43]); err == nil {
 		t.Fatal("短い init なのに通りました")
+	}
+	// カード番号の区切りが合わない長さは断ります。
+	if _, err := ReadInit(body[:45]); err == nil {
+		t.Fatal("45 バイトの init なのに通りました")
+	}
+	// CA_system_id が 0xFFFF を超えるものは断ります。
+	badCA := slices.Clone(body)
+	badCA[40], badCA[41], badCA[42], badCA[43] = 0x00, 0x01, 0x00, 0x00
+	if _, err := ReadInit(badCA); err == nil {
+		t.Fatal("CA_system_id が 0x10000 なのに通りました")
 	}
 }
 
@@ -98,9 +109,9 @@ func TestReadUpTo(t *testing.T) {
 	if err != nil || len(body) != 255 {
 		t.Fatalf("上限ちょうどの本文が読めません: %d バイト, %v", len(body), err)
 	}
-	// 上限を超えたら nil です。
+	// 上限を超えたら (nil, ErrTooLarge) です。
 	body, err = ReadUpTo(bytes.NewReader(make([]byte, 256)), 255)
-	if err != nil || body != nil {
-		t.Fatalf("上限を超えたのに読めました: %v, %v", len(body), err)
+	if !errors.Is(err, ErrTooLarge) || body != nil {
+		t.Fatalf("上限を超えたのに ErrTooLarge になりません: %v, %v", body, err)
 	}
 }

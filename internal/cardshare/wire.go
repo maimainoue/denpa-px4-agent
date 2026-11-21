@@ -4,11 +4,15 @@ package cardshare
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/b25"
 )
+
+// ErrTooLarge は本文が上限を超えたときのエラーです。空の本文 (長さ 0) と区別します。
+var ErrTooLarge = errors.New("本文が長すぎます")
 
 // 配る側が受け取る ECM の上限 (バイト)。カードに渡す APDU の Lc が 1 バイトなので 255 です。
 const MaxECM = 255
@@ -25,7 +29,7 @@ func CheckConfirm(verification []byte) error {
 }
 
 // ReadUpTo は本文を limit バイトまで読みます。超えたら、その時点で読むのをやめて
-// nil を返します。先に全部読むと、LAN の相手が上限の何倍もの本文を溜めさせられます。
+// (nil, ErrTooLarge) を返します。先に全部読むと、LAN の相手が上限の何倍もの本文を溜めさせられます。
 func ReadUpTo(body io.Reader, limit int) ([]byte, error) {
 	buf := make([]byte, limit+1)
 	n := 0
@@ -39,7 +43,7 @@ func ReadUpTo(body io.Reader, limit int) ([]byte, error) {
 			return nil, err
 		}
 	}
-	return nil, nil
+	return nil, ErrTooLarge
 }
 
 // PackInit はカードの定数をバイト列にします。
@@ -61,9 +65,16 @@ func ReadInit(body []byte) (b25.Info, error) {
 	if len(body) < 44 {
 		return info, fmt.Errorf("カードの情報が短すぎます")
 	}
+	if (len(body)-44)%8 != 0 {
+		return info, fmt.Errorf("カードの情報の長さがおかしいです (%d バイト)", len(body))
+	}
 	copy(info.SystemKey[:], body[0:32])
 	copy(info.CBCInit[:], body[32:40])
-	info.CASystemID = uint16(binary.BigEndian.Uint32(body[40:44]))
+	ca := binary.BigEndian.Uint32(body[40:44])
+	if ca > 0xFFFF {
+		return info, fmt.Errorf("CA_system_id が大きすぎます (0x%08x)", ca)
+	}
+	info.CASystemID = uint16(ca)
 	n := (len(body) - 44) / 8
 	info.IDs = make([]b25.CardID, n)
 	for i := range n {
