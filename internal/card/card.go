@@ -95,6 +95,75 @@ type Manager struct {
 	emmOnce    sync.Once
 	emmSeen    map[uint64]struct{}
 	lastNotify time.Time
+
+	remote         RemoteSource // 別の拠点から貰うときのカード。あればこちらを使います。
+	emmUnsupported bool         // 配る側が古くて EMM を受け取れない。送るのを止めます。
+}
+
+// RemoteSource は別の拠点から鍵を貰うときのカードです (9.5)。cardshare.RemoteCard がこれです。
+// TTL と往復時間は PR 4 で入るので、ここでは LAN の中だけという前提です。
+type RemoteSource interface {
+	// Init はカードの定数。1 回受け取れば変わらないので控えておきます。
+	Init() (b25.Info, error)
+	// Check は配る側とやり取りできるかです。控えている定数を使わずに問い合わせ直します。
+	Check() (b25.Info, error)
+	// Ecm は ECM 1 つを送って鍵を受け取ります。
+	Ecm(ecm []byte) (b25.ECMResult, error)
+	// Confirm は契約確認です。verification は 1〜253 バイト、dateMJD は MJD です。
+	Confirm(verification []byte, dateMJD uint16) (uint16, error)
+	// Emm は契約の更新 (EMM) を配る側に渡し、配る側のカードの返り値を返します。
+	Emm(payload []byte) (uint16, error)
+	// URL は配る側の URL です。画面に出します。
+	URL() string
+}
+
+// ErrEmmUnsupported は、鍵を配る拠点のエージェントが古くて EMM を受け取れないときの理由です。
+// 鍵と契約確認はそのまま使います。
+var ErrEmmUnsupported = errors.New("鍵を配る拠点のエージェントが古く、契約の更新 (EMM) を受け取れません。鍵と契約確認はそのまま使います")
+
+// LocalCard は手元のカードだけを見るものです。配る側 (/denpa/card/init・/ecm・/confirm・/emm) が使います。
+// Info・ECM・Confirm・EMMNow は Manager の手元のカードのものと同じです。
+type LocalCard interface {
+	Info() (b25.Info, error)
+	ECM(ecm []byte) (b25.ECMResult, error)
+	Confirm(ctx context.Context, verification []byte, mjd int) (int, error)
+	EMMNow(payload []byte) (int, error)
+}
+
+// localCard は Manager の手元のカードだけを見る包みです。
+type localCard struct{ m *Manager }
+
+func (l localCard) Info() (b25.Info, error)               { return l.m.localInfo() }
+func (l localCard) ECM(ecm []byte) (b25.ECMResult, error) { return l.m.localECM(ecm) }
+func (l localCard) Confirm(ctx context.Context, v []byte, mjd int) (int, error) {
+	return l.m.localConfirm(ctx, v, mjd)
+}
+func (l localCard) EMMNow(payload []byte) (int, error) { return l.m.EMMNow(payload) }
+
+// SetRemote は別の拠点から鍵を貰うときのカードを入れます。
+// 入れたら、手元のカードではなくこちらを使います。配る側は LocalCard() で手元のカードを使います。
+func (m *Manager) SetRemote(remote RemoteSource) {
+	m.mu.Lock()
+	m.remote = remote
+	m.mu.Unlock()
+}
+
+// LocalCard は手元のカードだけを返します。別の拠点から貰う設定でも、手元のカードを返します。
+// 鍵を配るサーバが使います。貰った鍵をさらに配ることはしません。
+func (m *Manager) LocalCard() LocalCard { return localCard{m} }
+
+func (m *Manager) remoteSource() RemoteSource {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.remote
+}
+
+func cardIDString(id b25.CardID) string {
+	var v uint64
+	for _, b := range id {
+		v = v<<8 | uint64(b)
+	}
+	return fmt.Sprintf("%016d", v)
 }
 
 // New は Manager を作る。providers は内蔵の経路を先に並べる。
@@ -118,11 +187,14 @@ func (memStore) Disabled() []string                       { return nil }
 func (memStore) SetDisabled(n []string) ([]string, error) { return n, nil }
 
 // Start は起動したときにカードを開いておき、切れていれば探し直す。
+// 別の拠点から貰う設定のときは、手元のカードは開きません。
 func (m *Manager) Start(ctx context.Context) {
 	go func() {
-		m.opMu.Lock()
-		m.ensureLocked()
-		m.opMu.Unlock()
+		if m.remoteSource() == nil {
+			m.opMu.Lock()
+			m.ensureLocked()
+			m.opMu.Unlock()
+		}
 		tk := time.NewTicker(5 * time.Second)
 		defer tk.Stop()
 		for {
@@ -135,7 +207,7 @@ func (m *Manager) Start(ctx context.Context) {
 			case <-tk.C:
 				m.opMu.Lock()
 				m.mu.Lock()
-				need := m.link == nil
+				need := m.link == nil && m.remote == nil
 				m.mu.Unlock()
 				if need {
 					m.ensureLocked()
@@ -358,8 +430,16 @@ func (m *Manager) send(ins byte, body []byte, minLen int) ([]byte, error) {
 	return m.transmit(apduFor(acas, ins, body), minLen)
 }
 
-// Info は INT の結果。開いていなければ開く。
+// Info は INT の結果。別の拠点から貰う設定のときは、配る側に問い合わせます。
 func (m *Manager) Info() (b25.Info, error) {
+	if r := m.remoteSource(); r != nil {
+		return r.Init()
+	}
+	return m.localInfo()
+}
+
+// localInfo は手元のカードの INT の結果。開いていなければ開く。
+func (m *Manager) localInfo() (b25.Info, error) {
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
 	if err := m.ensureLocked(); err != nil {
@@ -393,12 +473,11 @@ func (m *Manager) transmit(a []byte, minLen int) ([]byte, error) {
 }
 
 // ECM は ECM の中身に対する鍵。同じ中身には同じ鍵を返す (数秒だけ控える)。
+// 別の拠点から貰う設定のときは、配る側に送ります。控えるのは手元と同じです。
 func (m *Manager) ECM(ecm []byte) (b25.ECMResult, error) {
 	if len(ecm) < 1 || len(ecm) > 255 {
 		return b25.ECMResult{}, errors.New("ECM の長さは 1〜255 バイトです")
 	}
-	m.opMu.Lock()
-	defer m.opMu.Unlock()
 	key := string(ecm)
 	m.mu.Lock()
 	if e, ok := m.ecm[key]; ok && time.Since(e.at) < ecmTTL {
@@ -406,14 +485,16 @@ func (m *Manager) ECM(ecm []byte) (b25.ECMResult, error) {
 		return e.res, nil
 	}
 	m.mu.Unlock()
-	resp, err := m.send(0x34, ecm, 25)
+	var res b25.ECMResult
+	var err error
+	if r := m.remoteSource(); r != nil {
+		res, err = r.Ecm(ecm)
+	} else {
+		res, err = m.localECM(ecm)
+	}
 	if err != nil {
 		return b25.ECMResult{}, err
 	}
-	var res b25.ECMResult
-	res.Code = code(resp)
-	copy(res.Odd[:], resp[6:14])
-	copy(res.Even[:], resp[14:22])
 	m.mu.Lock()
 	if len(m.ecm) > 64 {
 		m.ecm = map[string]ecmEntry{}
@@ -423,8 +504,32 @@ func (m *Manager) ECM(ecm []byte) (b25.ECMResult, error) {
 	return res, nil
 }
 
+// localECM は手元のカードに ECM を送って鍵を受け取ります。
+func (m *Manager) localECM(ecm []byte) (b25.ECMResult, error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	resp, err := m.send(0x34, ecm, 25)
+	if err != nil {
+		return b25.ECMResult{}, err
+	}
+	var res b25.ECMResult
+	res.Code = code(resp)
+	copy(res.Odd[:], resp[6:14])
+	copy(res.Even[:], resp[14:22])
+	return res, nil
+}
+
 // EMM は順番待ち (16 件) に入れて、別の goroutine が 1 秒に 1 件まで送る。止まらない。
+// 配る側が古くて EMM を受け取れないときは、もう送りません。
 func (m *Manager) EMM(payload []byte) {
+	if m.remoteSource() != nil {
+		m.mu.Lock()
+		unsupported := m.emmUnsupported
+		m.mu.Unlock()
+		if unsupported {
+			return
+		}
+	}
 	m.emmOnce.Do(func() { go m.emmLoop() })
 	h := fnv.New64a()
 	h.Write(payload)
@@ -473,11 +578,35 @@ func (m *Manager) emmLoop() {
 		if seen {
 			continue
 		}
-		m.opMu.Lock()
-		resp, err := m.send(0x36, p, 6)
-		m.opMu.Unlock()
-		if err == nil {
-			c := code(resp)
+		var c uint16
+		var sendErr error
+		var unsupported bool
+		if r := m.remoteSource(); r != nil {
+			c, sendErr = r.Emm(p)
+			unsupported = errors.Is(sendErr, ErrEmmUnsupported)
+		} else {
+			m.opMu.Lock()
+			resp, err := m.send(0x36, p, 6)
+			m.opMu.Unlock()
+			if err == nil {
+				c = code(resp)
+			}
+			sendErr = err
+		}
+		if unsupported {
+			// 配る側が古くて EMM を受け取れません。もう送らず、この EMM は済んだことにします。
+			// 鍵と契約確認はそのまま使います。
+			m.mu.Lock()
+			if len(m.emmSeen) >= emmRemember {
+				m.emmSeen = map[uint64]struct{}{}
+			}
+			m.emmSeen[sum] = struct{}{}
+			m.emmUnsupported = true
+			m.mu.Unlock()
+			time.Sleep(emmInterval)
+			continue
+		}
+		if sendErr == nil {
 			if c == 0x2100 || c == 0xA102 || c == 0xA107 {
 				m.mu.Lock()
 				if len(m.emmSeen) >= emmRemember {
@@ -505,7 +634,17 @@ func (m *Manager) emmLoop() {
 }
 
 // Confirm は契約確認 (0x3C)。返り値だけ返す。
+// 別の拠点から貰う設定のときは、配る側に渡します。
 func (m *Manager) Confirm(ctx context.Context, verification []byte, mjd int) (int, error) {
+	if r := m.remoteSource(); r != nil {
+		code, err := r.Confirm(verification, uint16(mjd))
+		return int(code), err
+	}
+	return m.localConfirm(ctx, verification, mjd)
+}
+
+// localConfirm は手元のカードに契約確認を送ります。
+func (m *Manager) localConfirm(ctx context.Context, verification []byte, mjd int) (int, error) {
 	body := append([]byte{byte(mjd >> 8), byte(mjd)}, verification...)
 	m.opMu.Lock()
 	defer m.opMu.Unlock()
@@ -550,11 +689,20 @@ func (m *Manager) Status(ctx context.Context) map[string]any {
 	case r := <-done:
 		return r
 	case <-ctx.Done():
-		return map[string]any{"ok": false, "message": "カードが 10 秒以内に応答しません", "source": "local", "readers": []any{}}
+		out := map[string]any{"ok": false, "message": "カードが 10 秒以内に応答しません", "source": "local", "readers": []any{}}
+		if r := m.remoteSource(); r != nil {
+			out["source"] = "remote"
+			out["remote"] = r.URL()
+		}
+		return out
 	}
 }
 
 func (m *Manager) status() map[string]any {
+	if r := m.remoteSource(); r != nil {
+		return m.remoteStatus(r)
+	}
+
 	m.opMu.Lock()
 	m.ensureLocked()
 	m.opMu.Unlock()
@@ -622,6 +770,28 @@ func (m *Manager) status() map[string]any {
 		}
 	}
 	return map[string]any{"ok": ok, "message": msg, "source": "local", "readers": readers}
+}
+
+// remoteStatus は別の拠点から貰うときの GET /denpa/card の本文 (9.6)。
+// 手元のリーダーは使わないので readers は空で、配る側のカード番号と URL を外に出します。
+func (m *Manager) remoteStatus(r RemoteSource) map[string]any {
+	tuners := []string{}
+	if m.hooks.Active != nil {
+		tuners = m.hooks.Active()
+	}
+	if tuners == nil {
+		tuners = []string{}
+	}
+	// 問い合わせ直すので、配る側が落ちたり断ったりすればここで分かります。
+	info, err := r.Check()
+	if err != nil {
+		return map[string]any{"ok": false, "message": err.Error(), "source": "remote", "remote": r.URL(), "ids": []string{}, "tuners": tuners, "readers": []map[string]any{}}
+	}
+	ids := make([]string, 0, len(info.IDs))
+	for _, id := range info.IDs {
+		ids = append(ids, cardIDString(id))
+	}
+	return map[string]any{"ok": true, "message": "", "source": "remote", "remote": r.URL(), "ids": ids, "tuners": tuners, "readers": []map[string]any{}}
 }
 
 // emmDiscard は DecodeFile で EMM を渡さないための包み。
