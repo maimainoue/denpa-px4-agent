@@ -1,6 +1,7 @@
 package card
 
 import (
+	"bytes"
 	"context"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ type fakeRemote struct {
 	emmErr      error
 	ecmCalls    int
 	emmCalls    int
+	emmPayloads [][]byte
 }
 
 func (f *fakeRemote) URL() string { return f.url }
@@ -41,6 +43,7 @@ func (f *fakeRemote) Confirm(verification []byte, dateMJD uint16) (uint16, error
 func (f *fakeRemote) Emm(payload []byte) (uint16, error) {
 	f.mu.Lock()
 	f.emmCalls++
+	f.emmPayloads = append(f.emmPayloads, append([]byte(nil), payload...))
 	f.mu.Unlock()
 	return f.emmCode, f.emmErr
 }
@@ -175,5 +178,101 @@ func TestManagerRemoteEmmUnsupported(t *testing.T) {
 	remote.mu.Unlock()
 	if emmCalls != 1 {
 		t.Fatalf("止めたあとに EMM を送っています (%d 回)", emmCalls)
+	}
+}
+
+// ---- TS を作る道具 (EMM の端から端までの試験用) ----
+
+// testCRC32Table は MPEG-2 の CRC の表です (b25 の psi.go と同じ式)。
+var testCRC32Table = func() [256]uint32 {
+	var t [256]uint32
+	for i := 0; i < 256; i++ {
+		c := uint32(i) << 24
+		for j := 0; j < 8; j++ {
+			if c&0x80000000 != 0 {
+				c = c<<1 ^ 0x04C11DB7
+			} else {
+				c <<= 1
+			}
+		}
+		t[i] = c
+	}
+	return t
+}()
+
+func testCRC32MPEG(b []byte) uint32 {
+	crc := uint32(0xFFFFFFFF)
+	for _, x := range b {
+		crc = crc<<8 ^ testCRC32Table[byte(crc>>24)^x]
+	}
+	return crc
+}
+
+// testSection は PSI のセクションを作ります (b25 の試験用と同じ形)。
+func testSection(tableID byte, ext uint16, body []byte) []byte {
+	n := 5 + len(body) + 4
+	sec := []byte{tableID, 0xB0 | byte(n>>8), byte(n), byte(ext >> 8), byte(ext), 0xC1, 0, 0}
+	sec = append(sec, body...)
+	crc := testCRC32MPEG(sec)
+	return append(sec, byte(crc>>24), byte(crc>>16), byte(crc>>8), byte(crc))
+}
+
+// testPsiPacket は PSI のセクションを 1 パケットに入れます。
+func testPsiPacket(pid uint16, sec []byte) []byte {
+	p := make([]byte, 188)
+	for i := range p {
+		p[i] = 0xFF
+	}
+	p[0] = 0x47
+	p[1] = 0x40 | byte(pid>>8)
+	p[2] = byte(pid)
+	p[3] = 0x10
+	copy(p[4:], append([]byte{0}, sec...))
+	return p
+}
+
+// TestManagerRemoteEmmFromStream は、TS から来た EMM が、配る側のカードの番号で
+// 選ばれてリモートに送られることを、端から端まで確かめます。
+// 手元のカードは無く、番号は配る側 (Init) のものです。
+func TestManagerRemoteEmmFromStream(t *testing.T) {
+	remote := newFakeRemote()
+	m := New(nil, nil, nil, Hooks{})
+	m.SetRemote(remote)
+	s := m.NewStream("test")
+	s.SetDecrypt(true)
+	mine := append([]byte{0x00, 0x01, 0x23, 0x45, 0x67, 0x89, 6}, bytes.Repeat([]byte{0xAA}, 6)...)
+	other := append([]byte{9, 9, 9, 9, 9, 9, 6}, bytes.Repeat([]byte{0xBB}, 6)...)
+	emm := append([]byte{0x84, 0xB0, byte(len(mine) + len(other) + 4)}, append(mine, other...)...)
+	crc := testCRC32MPEG(emm)
+	emm = append(emm, byte(crc>>24), byte(crc>>16), byte(crc>>8), byte(crc))
+	cat := testSection(0x01, 0xFFFF, []byte{0x09, 0x04, 0x00, 0x05, 0xE0 | 0x01, 0x00}) // EMM PID 0x100
+	s.Process(append(testPsiPacket(1, cat), testPsiPacket(0x100, emm)...))
+	// emmLoop が送るまで待ちます (1 秒に 1 件)。
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		remote.mu.Lock()
+		calls := remote.emmCalls
+		remote.mu.Unlock()
+		if calls == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("EMM がリモートに送られませんでした (%d 回)", calls)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	remote.mu.Lock()
+	sent := remote.emmPayloads[0]
+	remote.mu.Unlock()
+	if !bytes.Equal(sent, mine) {
+		t.Fatalf("送られた EMM が違います: %x", sent)
+	}
+	// 他のカード宛てのものは送りません。
+	time.Sleep(200 * time.Millisecond)
+	remote.mu.Lock()
+	calls := remote.emmCalls
+	remote.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("EMM を %d 回送っています", calls)
 	}
 }
