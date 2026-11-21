@@ -104,19 +104,26 @@ func (b *Backend) Validate(device string) error {
 var hostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
 
 // validHost はホスト名か IPv4 か。長さは 253 まで。
-func validHost(s string) bool { return len(s) > 0 && len(s) <= 253 && hostRe.MatchString(s) }
+// 末尾の点 1 個 (nasne.example.com. のような絶対ドメイン名) は除いて調べます。
+// コマンドに渡す元の値は、そのままにします。
+func validHost(s string) bool {
+	s = strings.TrimSuffix(s, ".")
+	return len(s) > 0 && len(s) <= 253 && hostRe.MatchString(s)
+}
 
-// checkDeviceHost は、command の引数の一部に {device} が入っている機種で、
+// checkDeviceHost は、command・serviceArg・tsidArg の引数の一部に {device} が入っている機種で、
 // device の末尾がホスト名か IPv4 かを確かめる。{device} が URL の途中に入るので、
 // `/`・`#`・`?`・`@`・`:`・空白が入ると、接続先のホスト・ポート・パスを変えられてしまう。
 // {device} だけの要素は別の引数として渡るので、検証しない。
 func checkDeviceHost(def *devices.Def, device string) error {
-	for _, a := range def.Command {
-		if a != "{device}" && strings.Contains(a, "{device}") {
-			if !validHost(device) {
-				return fmt.Errorf("device の末尾はホスト名か IPv4 だけにします (%s)", device)
+	for _, args := range [][]string{def.Command, def.ServiceArg, def.TsidArg} {
+		for _, a := range args {
+			if a != "{device}" && strings.Contains(a, "{device}") {
+				if !validHost(device) {
+					return fmt.Errorf("device の末尾はホスト名か IPv4 だけにします (%s)", device)
+				}
+				return nil
 			}
-			return nil
 		}
 	}
 	return nil

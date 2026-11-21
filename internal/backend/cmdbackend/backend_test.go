@@ -27,12 +27,12 @@ func TestValidate_deviceの末尾はホスト名かIPv4(t *testing.T) {
 	defs.Put(cmdDef("recpt1 (PT3)", "GR")) // {device} だけの要素。検証しない
 	b := New(Config{Defs: defs})
 
-	for _, dev := range []string{"nasne.local", "192.168.0.43", "nasne"} {
+	for _, dev := range []string{"nasne.local", "192.168.0.43", "nasne", "nasne.example.com."} {
 		if err := b.Validate("cmd:Sony nasne (nasne-recpt1 HTTP):" + dev); err != nil {
 			t.Errorf("%s: 通るはず: %v", dev, err)
 		}
 	}
-	for _, dev := range []string{"127.0.0.1:8080/private#", "a@b", "a/b", "a b", "", "-a"} {
+	for _, dev := range []string{"127.0.0.1:8080/private#", "a@b", "a/b", "a b", "", "-a", "a..b", ".a", "."} {
 		if err := b.Validate("cmd:Sony nasne (nasne-recpt1 HTTP):" + dev); err == nil {
 			t.Errorf("%q: 断るはず", dev)
 		}
@@ -40,6 +40,33 @@ func TestValidate_deviceの末尾はホスト名かIPv4(t *testing.T) {
 	// {device} だけの要素なら、ホスト名でなくても通る
 	if err := b.Validate("cmd:recpt1 (PT3):nasne.local:8301"); err != nil {
 		t.Errorf("recpt1: 通るはず: %v", err)
+	}
+}
+
+// TestValidate_deviceの末尾はServiceArgに埋め込んでも検査する:
+// {device} が serviceArg の引数の一部に入っている機種でも、Validate と Open の両方で断る。
+func TestValidate_deviceの末尾はServiceArgに埋め込んでも検査する(t *testing.T) {
+	defs := devices.NewDefs()
+	defs.Put(devices.Def{
+		Model:         "nasne (serviceArg)",
+		Command:       []string{"curl", "-sfN"},
+		ServiceArg:    []string{"http://{device}:8301/tuner/{channel}{sidQuery}"},
+		ChannelFormat: devices.FormatRecpt1,
+		Receivers:     []devices.Receiver{{Types: []string{"GR"}}},
+	})
+	b := New(Config{Defs: defs})
+
+	if err := b.Validate("cmd:nasne (serviceArg):192.168.0.43"); err != nil {
+		t.Errorf("192.168.0.43: 通るはず: %v", err)
+	}
+	for _, dev := range []string{"127.0.0.1:8080/private#", "a@b"} {
+		if err := b.Validate("cmd:nasne (serviceArg):" + dev); err == nil {
+			t.Errorf("Validate %q: 断るはず", dev)
+		}
+		_, err := b.Open(backend.TunerSpec{Name: "x", Device: "cmd:nasne (serviceArg):" + dev})
+		if err == nil || backend.StatusOf(err) != 400 {
+			t.Errorf("Open %q: 400 のはず: %v", dev, err)
+		}
 	}
 }
 

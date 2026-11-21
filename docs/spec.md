@@ -446,6 +446,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 - `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。ただし `curl -f` は 400 以上のどの HTTP ステータスでも 22 で終わるので、404・500 も使用中 (409) に見える。区別は今はできない ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
 - 衛星の `:TSID` は、この設定例では渡せない。上の `command` に `tsidArg` が無いので、**`:TSID` 付きの選局 (`BS15:16625` など) は 400 で断られる** (6.2 の制限と同じ)。`:TSID` 無しの `BS15` は `BS15_0` になる (`channelFormat: recpt1` は衛星を常に `_0` にする。スロット番号を付けた `BS15_1` などは、この経路では選べない)。nasne の HTTP に `--tsid` に当たる指定 (`tsid=`) があるかは、版によるかもしれず、実機の版では未確認 ([20](#20-決めていないこと確かめること))。あると分かれば、`tsidArg` を足して渡せる
 - 選局の切り替えは curl を殺して起動し直す。nasne 側はロックを 4 秒待つので、連続の切り替えでは `busyExitCode` が返ることがある (409 で denpa が掛け直す)
+- Docker のイメージには `curl` が無いので、この組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
 - nasne 側の `/status` と `nasne-waked` (予約の 5 分前に起こす) は使わない。電源を落とす運用は denpa とは合わない (録画の時刻を nasne が知らない) ので、nasne は常時起動にする
 
 #### 置き方 B: エージェントを nasne の上で動かす
