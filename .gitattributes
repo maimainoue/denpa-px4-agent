@@ -1,0 +1,2 @@
+# シェルスクリプトは、Windows のチェックアウトでも LF のままにする (CRLF だと Linux の sh で set -eu が動かない)
+*.sh text eol=lf
