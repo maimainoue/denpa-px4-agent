@@ -59,7 +59,7 @@ func startShareServer(t *testing.T, networks string) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := New(0, nets, fakeLocal{}, nil, func(format string, args ...any) {})
+	srv := New(0, nets, fakeLocal{}, nil, 1, 0, func(format string, args ...any) {})
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -84,6 +84,17 @@ func sharePort(srv *Server) string {
 func post(t *testing.T, url string, body []byte) (int, []byte) {
 	t.Helper()
 	resp, err := http.Post(url, "application/octet-stream", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, b
+}
+
+func get(t *testing.T, url string) (int, []byte) {
+	t.Helper()
+	resp, err := http.Get(url)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +250,7 @@ func mustNets(t *testing.T) []*net.IPNet {
 
 // TestShareServerStartAfterClose は、閉じたあとの Start が待ち受けを残さないことを確かめます。
 func TestShareServerStartAfterClose(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, 1, 0, func(format string, args ...any) {})
 	if err := srv.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +271,7 @@ func TestShareServerWrapListener(t *testing.T) {
 		called = true
 		return ln
 	}
-	srv := New(0, mustNets(t), fakeLocal{}, wrap, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, wrap, 1, 0, func(format string, args ...any) {})
 	defer srv.Close()
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
@@ -274,7 +285,7 @@ func TestShareServerWrapListener(t *testing.T) {
 // ヘッダーを送ったあと 10 バイトだけ送って止めると、ReadTimeout で切断されます。
 // 切るときに 500 が返ることもありますが、応答の有無は問いません。切られることが大事です。
 func TestShareServerStalledBody(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, 1, 0, func(format string, args ...any) {})
 	srv.readTimeout = 200 * time.Millisecond
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
@@ -309,7 +320,7 @@ func TestShareServerStalledBody(t *testing.T) {
 
 // TestLogRefusedCap は、断った記録が上限を超えないことを確かめます。
 func TestLogRefusedCap(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, 1, 0, func(format string, args ...any) {})
 	for i := 0; i < maxRefused+500; i++ {
 		srv.logRefused(fmt.Sprintf("peer-%d", i), "CARD_SHARE_NETWORKS", "理由")
 	}
@@ -323,7 +334,7 @@ func TestLogRefusedCap(t *testing.T) {
 
 // TestLogRefusedExpiry は、10 分以上前の記録が捨てられることを確かめます。
 func TestLogRefusedExpiry(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, 1, 0, func(format string, args ...any) {})
 	srv.mu.Lock()
 	srv.refused["old/CARD_SHARE_NETWORKS"] = time.Now().Add(-11 * time.Minute)
 	srv.mu.Unlock()
@@ -335,5 +346,107 @@ func TestLogRefusedExpiry(t *testing.T) {
 	}
 	if _, ok := srv.refused["new/CARD_SHARE_NETWORKS"]; !ok {
 		t.Fatal("新しい記録がありません")
+	}
+}
+
+// TestShareServerTTL は、待ち受けのソケットに TTL が付くことを確かめます。
+func TestShareServerTTL(t *testing.T) {
+	srv := New(0, mustNets(t), fakeLocal{}, nil, 2, 0, func(format string, args ...any) {})
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	tl, ok := srv.listeners[0].(*ttlListener)
+	if !ok {
+		t.Fatal("待ち受けが ttlListener ではありません")
+	}
+	tcpLn, ok := tl.Listener.(*net.TCPListener)
+	if !ok {
+		t.Fatal("待ち受けが TCP ではありません")
+	}
+	raw, err := tcpLn.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := checkSocketTTL(raw, "tcp4", 2); err != nil {
+		t.Fatal(err)
+	}
+	// TTL を付けても、配る側はそのまま動きます。
+	if status, body := get(t, shareURL(srv)+"/denpa/card/init"); status != http.StatusOK {
+		t.Fatalf("init が %d になりました: %s", status, body)
+	}
+}
+
+// TestShareServerMaxRTT は、往復時間が上限を超える相手を断ることを確かめます。
+func TestShareServerMaxRTT(t *testing.T) {
+	srv := New(0, mustNets(t), fakeLocal{}, nil, 1, 0, func(format string, args ...any) {})
+	srv.maxRTT = time.Nanosecond // ループバックでも超えます。
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	status, body := get(t, shareURL(srv)+"/denpa/card/init")
+	if status != http.StatusForbidden {
+		t.Fatalf("往復時間の上限を超えたのに %d になりました: %s", status, body)
+	}
+	if !strings.Contains(string(body), "往復時間") {
+		t.Fatalf("往復時間の理由が入っていません: %s", body)
+	}
+}
+
+// blockingLocal は ECM で止まる試験カードです。同時の要求の数の試験に使います。
+type blockingLocal struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b blockingLocal) Info() (b25.Info, error) { return fakeLocal{}.Info() }
+func (b blockingLocal) Confirm(ctx context.Context, verification []byte, mjd int) (int, error) {
+	return 0x0800, nil
+}
+func (b blockingLocal) EMMNow(payload []byte) (int, error) { return 0x2100, nil }
+func (b blockingLocal) ECM(ecm []byte) (b25.ECMResult, error) {
+	b.entered <- struct{}{}
+	<-b.release
+	return fakeLocal{}.ECM(ecm)
+}
+
+// TestShareServerMaxConcurrent は、同時に受ける要求の数が上限を超えると 503 を返すことを確かめます。
+func TestShareServerMaxConcurrent(t *testing.T) {
+	local := blockingLocal{entered: make(chan struct{}, maxConcurrentRequests+1), release: make(chan struct{})}
+	srv := New(0, mustNets(t), local, nil, 1, 0, func(format string, args ...any) {})
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	base := shareURL(srv)
+	ecm := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0xaa, 0xbb, 0xcc}
+	done := make(chan struct{}, maxConcurrentRequests)
+	for i := 0; i < maxConcurrentRequests; i++ {
+		go func() {
+			resp, err := http.Post(base+"/denpa/card/ecm", "application/octet-stream", bytes.NewReader(ecm))
+			if err == nil {
+				io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+			}
+			done <- struct{}{}
+		}()
+	}
+	// 4 件が ECM の中に入るのを待ちます。
+	for i := 0; i < maxConcurrentRequests; i++ {
+		select {
+		case <-local.entered:
+		case <-time.After(3 * time.Second):
+			close(local.release)
+			t.Fatal("ECM に入る要求が足りません")
+		}
+	}
+	status, body := post(t, base+"/denpa/card/ecm", ecm)
+	close(local.release)
+	for i := 0; i < maxConcurrentRequests; i++ {
+		<-done
+	}
+	if status != http.StatusServiceUnavailable {
+		t.Fatalf("5 件目が %d になりました: %s", status, body)
 	}
 }

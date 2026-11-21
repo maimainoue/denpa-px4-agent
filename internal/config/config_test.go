@@ -120,3 +120,49 @@ func TestParseShareNetworks(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_CARD_TTL(t *testing.T) {
+	load := func(v string) (*Config, error) {
+		return Load(func(k string) string {
+			if k == "CARD_TTL" {
+				return v
+			}
+			return ""
+		}, "linux", "/usr/local/sbin/denpa-px4-agent")
+	}
+	c, err := load("")
+	if err != nil || c.CardTTL != 1 {
+		t.Fatalf("既定は 1: %+v %v", c, err)
+	}
+	if c, err = load("8"); err != nil || c.CardTTL != 8 {
+		t.Errorf("%+v %v", c, err)
+	}
+	for _, bad := range []string{"0", "9", "abc"} {
+		if _, err := load(bad); err == nil {
+			t.Errorf("%q を受けました", bad)
+		}
+	}
+}
+
+func TestLoad_CARD_SHARE_MAX_RTT(t *testing.T) {
+	load := func(v string) (*Config, error) {
+		return Load(func(k string) string {
+			if k == "CARD_SHARE_MAX_RTT" {
+				return v
+			}
+			return ""
+		}, "linux", "/usr/local/sbin/denpa-px4-agent")
+	}
+	c, err := load("")
+	if err != nil || c.CardShareMaxRTTMs != 0 {
+		t.Fatalf("既定は 0 (見ない): %+v %v", c, err)
+	}
+	if c, err = load("100"); err != nil || c.CardShareMaxRTTMs != 100 {
+		t.Errorf("%+v %v", c, err)
+	}
+	for _, bad := range []string{"-1", "abc"} {
+		if _, err := load(bad); err == nil {
+			t.Errorf("%q を受けました", bad)
+		}
+	}
+}

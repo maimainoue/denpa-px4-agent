@@ -453,7 +453,7 @@ func TestApp_CardURL_配る側のカード番号を返す(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	share := cardshare.New(0, nets, fakeShareLocal{}, nil, func(format string, args ...any) {})
+	share := cardshare.New(0, nets, fakeShareLocal{}, nil, 1, 0, func(format string, args ...any) {})
 	if err := share.Start(); err != nil {
 		t.Fatal(err)
 	}

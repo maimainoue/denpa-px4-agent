@@ -101,7 +101,7 @@ type Manager struct {
 }
 
 // RemoteSource は別の拠点から鍵を貰うときのカードです (9.5)。cardshare.RemoteCard がこれです。
-// TTL と往復時間は PR 4 で入るので、ここでは LAN の中だけという前提です。
+// LAN の中だけという前提です。
 type RemoteSource interface {
 	// Init はカードの定数。1 回受け取れば変わらないので控えておきます。
 	Init() (b25.Info, error)

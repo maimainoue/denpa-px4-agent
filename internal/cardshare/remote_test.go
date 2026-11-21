@@ -19,7 +19,7 @@ import (
 // TestRemoteCardRoundTrip は、貰う側と配る側の往復を確かめます。
 func TestRemoteCardRoundTrip(t *testing.T) {
 	srv := startShareServer(t, config.DefaultShareNetworks())
-	remote := NewRemoteCard(shareURL(srv), func(format string, args ...any) {})
+	remote := NewRemoteCard(shareURL(srv), 1, func(format string, args ...any) {})
 
 	init, err := remote.Init()
 	if err != nil {
@@ -86,7 +86,7 @@ func TestRemoteCardEmmUnsupported(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	remote := NewRemoteCard(srv.URL, 1, func(format string, args ...any) {})
 	if _, err := remote.Emm(make([]byte, 13)); !errors.Is(err, card.ErrEmmUnsupported) {
 		t.Fatalf("1 回目が ErrEmmUnsupported ではありません: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestRemoteCardRefused(t *testing.T) {
 		fmt.Fprint(w, `{"error": "範囲の外です"}`)
 	}))
 	defer srv.Close()
-	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	remote := NewRemoteCard(srv.URL, 1, func(format string, args ...any) {})
 	_, err := remote.Check()
 	var refused *ShareRefused
 	if !errors.As(err, &refused) || refused.Status != http.StatusForbidden {
@@ -125,7 +125,7 @@ func TestRemoteCardRefused(t *testing.T) {
 		http.NotFound(w, r)
 	}))
 	defer srv2.Close()
-	remote2 := NewRemoteCard(srv2.URL, func(format string, args ...any) {})
+	remote2 := NewRemoteCard(srv2.URL, 1, func(format string, args ...any) {})
 	_, err = remote2.Check()
 	if !errors.As(err, &refused) || refused.Status != http.StatusNotFound {
 		t.Fatalf("404 が ShareRefused になりません: %v", err)
@@ -143,7 +143,7 @@ func TestRemoteCardUnreachable(t *testing.T) {
 	}
 	addr := ln.Addr().String()
 	ln.Close()
-	remote := NewRemoteCard("http://"+addr, func(format string, args ...any) {})
+	remote := NewRemoteCard("http://"+addr, 1, func(format string, args ...any) {})
 	_, err = remote.Check()
 	if err == nil || !strings.Contains(err.Error(), "CARD_SHARE_PORT を開いているか確かめてください") {
 		t.Fatalf("繋がらないときの案内が出ません: %v", err)
@@ -156,7 +156,7 @@ func TestRemoteCardResponseTooLarge(t *testing.T) {
 		w.Write(make([]byte, maxResponseBody+1))
 	}))
 	defer srv.Close()
-	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	remote := NewRemoteCard(srv.URL, 1, func(format string, args ...any) {})
 	_, err := remote.Check()
 	if err == nil || !strings.Contains(err.Error(), "大きすぎます") {
 		t.Fatalf("大きすぎる応答がエラーになりません: %v", err)
@@ -174,7 +174,7 @@ func TestRemoteCardNoRedirect(t *testing.T) {
 		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
 	}))
 	defer srv.Close()
-	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	remote := NewRemoteCard(srv.URL, 1, func(format string, args ...any) {})
 	_, err := remote.Ecm([]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0xaa, 0xbb, 0xcc})
 	if err == nil {
 		t.Fatal("307 がエラーになりません")
@@ -203,7 +203,7 @@ func TestRemoteCardDownBackoff(t *testing.T) {
 		conn.Close()
 	}))
 	defer srv.Close()
-	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	remote := NewRemoteCard(srv.URL, 1, func(format string, args ...any) {})
 	remote.downBackoff = 200 * time.Millisecond
 	ecm := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0xaa, 0xbb, 0xcc}
 	if _, err := remote.Ecm(ecm); err == nil {
