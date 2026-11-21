@@ -17,7 +17,7 @@ func TestBuildArgs(t *testing.T) {
 		},
 	}
 	nasneHTTP := &devices.Def{
-		Command: []string{"curl", "-sfN", "http://nasne.local:8301/tuner/{channel}{sidQuery}"},
+		Command: []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"},
 	}
 	nasneLocal := &devices.Def{
 		Command:    []string{"/usr/local/sbin/nasne-recpt1", "{channel}", "-", "-"},
@@ -52,11 +52,14 @@ func TestBuildArgs(t *testing.T) {
 			Params{Channel: []string{"T", "27"}, Service: 1024, TSID: -1},
 			[]string{"px4rec", "T", "27", "1024", "-"}},
 		{"{sidQuery} は要素の中に埋め込める (局あり)", nasneHTTP,
-			Params{Channel: []string{"27"}, Service: 23608, TSID: -1},
+			Params{Device: "nasne.local", Channel: []string{"27"}, Service: 23608, TSID: -1},
 			[]string{"curl", "-sfN", "http://nasne.local:8301/tuner/27?sid=23608"}},
 		{"{sidQuery} は局が無ければ空", nasneHTTP,
-			Params{Channel: []string{"27"}, TSID: -1},
+			Params{Device: "nasne.local", Channel: []string{"27"}, TSID: -1},
 			[]string{"curl", "-sfN", "http://nasne.local:8301/tuner/27"}},
+		{"{device} はホスト名や IP に置き換わる", nasneHTTP,
+			Params{Device: "192.168.0.43", Channel: []string{"21"}, Service: 1056, TSID: -1},
+			[]string{"curl", "-sfN", "http://192.168.0.43:8301/tuner/21?sid=1056"}},
 		{"serviceArg は局があるときだけ末尾に足す", nasneLocal,
 			Params{Channel: []string{"27"}, Service: 23608, TSID: -1},
 			[]string{"/usr/local/sbin/nasne-recpt1", "27", "-", "-", "--sid", "23608"}},

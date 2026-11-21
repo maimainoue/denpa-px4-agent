@@ -157,6 +157,8 @@ type Tuner interface {
 
 この表が、対象の機種のすべてです (tsukumijima/px4_drv の「対応デバイス」と同じ)。
 
+nasne (HTTP) は px4_drv の機種ではなく、`cmd` バックエンドの組み込みです ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。
+
 `host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
 
 - Windows と macOS では、DriverHost_PX4 の定義に無い機種は開けません。足すときは DriverHost_PX4.ini と `devices.json` の両方に書きます
@@ -424,10 +426,12 @@ Sony nasne の `nasne-recpt1` のように、「1 回の起動で 1 つの局 (�
 
 denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェントを動かし、`cmd` バックエンドで `curl` を起動します。**エージェントを nasne に足さない**ので、MIPS のビルドもカーネルの制限も、TLS の暗号の負荷も nasne には関わりません (nasne 側で動かすのは、今までどおり `nasne-recpt1 --listen 8301` の HTTP だけ)。nasne とエージェントの間は平文の HTTP で、TLS になるのはエージェントと denpa の間です。**負荷の面からも、こちらを勧めます** (置き方 B の負荷は下)。
 
+組み込みの機種表に `Sony nasne (nasne-recpt1 HTTP)` があります。`devices.json` に書く必要はありません。組み込みの定義は次のとおりです。
+
 ```json
 {
   "model": "Sony nasne (nasne-recpt1 HTTP)",
-  "command": ["curl", "-sfN", "http://nasne.local:8301/tuner/{channel}{sidQuery}"],
+  "command": ["curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"],
   "channelFormat": "recpt1",
   "singleService": true,
   "decryptedByDevice": true,
@@ -439,9 +443,10 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 ```
 
 - `tuners.json` は `{"name": "nasne", "types": ["GR", "BS", "CS"], "device": "cmd:Sony nasne (nasne-recpt1 HTTP):nasne.local"}` の 1 台 (既定の 1 系統)。nasne 側を `--dual-tuner` で動かすなら、`types` を `["GR"]` と `["BS", "CS"]` に分けた 2 台にする (同じ `device`)
-- `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
+- `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。ただし `curl -f` は 400 以上のどの HTTP ステータスでも 22 で終わるので、404・500 も使用中 (409) に見える。区別は今はできない ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
 - 衛星の `:TSID` は、この設定例では渡せない。上の `command` に `tsidArg` が無いので、**`:TSID` 付きの選局 (`BS15:16625` など) は 400 で断られる** (6.2 の制限と同じ)。`:TSID` 無しの `BS15` は `BS15_0` になる (`channelFormat: recpt1` は衛星を常に `_0` にする。スロット番号を付けた `BS15_1` などは、この経路では選べない)。nasne の HTTP に `--tsid` に当たる指定 (`tsid=`) があるかは、版によるかもしれず、実機の版では未確認 ([20](#20-決めていないこと確かめること))。あると分かれば、`tsidArg` を足して渡せる
 - 選局の切り替えは curl を殺して起動し直す。nasne 側はロックを 4 秒待つので、連続の切り替えでは `busyExitCode` が返ることがある (409 で denpa が掛け直す)
+- Docker のイメージには `curl` が無いので、この組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
 - nasne 側の `/status` と `nasne-waked` (予約の 5 分前に起こす) は使わない。電源を落とす運用は denpa とは合わない (録画の時刻を nasne が知らない) ので、nasne は常時起動にする
 
 #### 置き方 B: エージェントを nasne の上で動かす
@@ -831,7 +836,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 - 空の配列は定義を消す (自動検出に戻す)
 - 書き換えは、選局と読み出しが止まるのを待ってから行う。名前が同じチューナーは選局を保ったまま定義だけ替え、無効にしたチューナーの選局は畳んで利用者を残さない
 - 応答は `GET /denpa/tuners` と同じ
-- 選局コマンドのような自由な文字列は受け取らない。`device` は `px4:`・`px4host:`・`cmd:` で始まるものだけ受け、それ以外は 400。`cmd:` の `<model>` は機材の定義にある `command` 付きの機種に限る (無ければ 400)
+- 選局コマンドのような自由な文字列は受け取らない。`device` は `px4:`・`px4host:`・`cmd:` で始まるものだけ受け、それ以外は 400。`cmd:` の `<model>` は機材の定義にある `command` 付きの機種に限る (無ければ 400)。`command` の引数の一部に `{device}` が入る機種では、`device` の末尾はホスト名か IPv4 だけにする (それ以外は 400)
 
 ### 10.5 `PUT /denpa/channels`
 
@@ -944,13 +949,14 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 
 ## 16. 配布
 
-- Go 1.23 以上。Linux と Windows は `CGO_ENABLED=0` で静的にビルド、macOS は cgo あり (PCSC.framework・IOKit)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
+- Go 1.23 以上。`CGO_ENABLED=0` で静的にビルドする (macOS も。今の実装は DriverHost_PX4 への UNIX ドメインソケットだけで、cgo を使わない)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
 - nasne 向けに `linux/mipsle` (`GOMIPS=softfloat`) も出す ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1) の置き方 B)。`cmd` バックエンドだけで、pcscd と chardev は使わない構成なので、リリースの表では「試験的」と書く
 - **nasne 向けのバイナリは、ChaCha20-Poly1305 の MIPSLE のアセンブリ入りの専用ビルド**にする (`scripts/build-nasne.sh`。取り込んだアセンブリ `third_party/x-crypto-mipsle` を、専用に複製した GOROOT に当て、`-D=GOMIPS_r2` で `ROTR` を使う)。標準のビルドより、TLS の暗号が約 4.5 倍速く、実放送の TLS でエージェントの CPU が 1 コアの 88〜92% → 42〜43% になる ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1)、[#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。**MIPS32r2 以上の機材だけで動く** (nasne の 74Kc は r2。r1 の機材では、実行時に不正な命令になる)。配るときは、バイナリのとなりの `*.licenses.txt` (アセンブリの MIT と、Go の BSD のライセンス) を付ける。上流 (golang/crypto の PR 294) にマージされたら、この専用ビルドは要らなくなる
 
 ### Linux
 
 - Docker イメージは `gcr.io/distroless/static` に置く。`USER` は root のまま (デバイスファイルのグループが `video` で、コンテナの中のユーザーに合わせられないため。要れば `--group-add video` で変える)
+- Docker のイメージには `curl` が無いので、nasne (HTTP) の組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
 - denpa の `compose.override.yml` で `tuner-agent` を差し替える。px4_drv のメジャー番号は動的なので、`device_cgroup_rules` は `c *:* rmw` にし、`/dev` をディレクトリごと渡す。`/sys` は読み取りで渡す (機材の見分けに使う)
 - pcscd は、ホストの socket (`/run/pcscd`) を渡すか、コンテナの中で動かす。px4_drv の README「Docker 環境からカードリーダーにアクセスする場合」に従う。両方で動かすと競合する
 
