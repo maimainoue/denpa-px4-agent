@@ -68,7 +68,7 @@ docker buildx build --platform linux/amd64,linux/arm64 --push \
   --build-arg VERSION=v0.1.0 -t ghcr.io/maimainoue/denpa-px4-agent:latest .
 ```
 
-リリース用のバイナリ (linux・windows・macOS・nasne 向け mipsle) は、スクリプトで作ります。`dist/` に出ます。
+リリース用のバイナリ (linux・windows・macOS・nasne 向け mipsle) は、スクリプトで作ります。`dist/` に出ます。nasne 向け (mipsle) は、ChaCha20-Poly1305 のアセンブリ入りの専用ビルド (`scripts/build-nasne.sh`) で、専用に複製した GOROOT を使うので、ほかより時間がかかります。**MIPS32r2 以上の機材だけで動き** (nasne の 74Kc は r2)、バイナリのとなりに `denpa-px4-agent-linux-mipsle.licenses.txt` (アセンブリの MIT と、Go の BSD のライセンス) もできます。**配るときは、一緒に付けてください。**
 
 ```sh
 VERSION=v0.1.0 bash scripts/build-release.sh
