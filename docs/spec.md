@@ -945,7 +945,8 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 ## 16. 配布
 
 - Go 1.23 以上。Linux と Windows は `CGO_ENABLED=0` で静的にビルド、macOS は cgo あり (PCSC.framework・IOKit)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
-- nasne 向けに `linux/mipsle` (`GOMIPS=softfloat`) も出す ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1) の置き方 B)。`cmd` バックエンドだけで、pcscd と chardev は使わない構成なので、リリースの表では「試験的」と書く。**nasne 向けは、ChaCha20-Poly1305 の MIPSLE のアセンブリ入りの専用ビルド**にする (`scripts/build-nasne.sh`。取り込んだアセンブリ `third_party/x-crypto-mipsle` を、専用に複製した GOROOT に当て、`-D=GOMIPS_r2` で `ROTR` を使う)。標準のビルドより、TLS の暗号が約 4.5 倍速く、実放送の TLS でエージェントの CPU が 1 コアの 88〜92% → 42〜43% になる ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1)、[#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。**MIPS32r2 以上の機材だけで動く** (nasne の 74Kc は r2。r1 の機材では、実行時に不正な命令になる)。配るときは、バイナリのとなりの `*.licenses.txt` (アセンブリの MIT と、Go の BSD のライセンス) を付ける。上流 (golang/crypto の PR 294) にマージされたら、この専用ビルドは要らなくなる
+- nasne 向けに `linux/mipsle` (`GOMIPS=softfloat`) も出す ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1) の置き方 B)。`cmd` バックエンドだけで、pcscd と chardev は使わない構成なので、リリースの表では「試験的」と書く
+- **nasne 向けのバイナリは、ChaCha20-Poly1305 の MIPSLE のアセンブリ入りの専用ビルド**にする (`scripts/build-nasne.sh`。取り込んだアセンブリ `third_party/x-crypto-mipsle` を、専用に複製した GOROOT に当て、`-D=GOMIPS_r2` で `ROTR` を使う)。標準のビルドより、TLS の暗号が約 4.5 倍速く、実放送の TLS でエージェントの CPU が 1 コアの 88〜92% → 42〜43% になる ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1)、[#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。**MIPS32r2 以上の機材だけで動く** (nasne の 74Kc は r2。r1 の機材では、実行時に不正な命令になる)。配るときは、バイナリのとなりの `*.licenses.txt` (アセンブリの MIT と、Go の BSD のライセンス) を付ける。上流 (golang/crypto の PR 294) にマージされたら、この専用ビルドは要らなくなる
 
 ### Linux
 
