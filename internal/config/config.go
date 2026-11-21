@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -100,6 +101,11 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 	c.ShutdownWait = time.Duration(ms) * time.Millisecond
 
 	c.CardURL = getenv("CARD_URL")
+	if c.CardURL != "" {
+		if err := ValidateCardURL(c.CardURL); err != nil {
+			return nil, err
+		}
+	}
 	if c.CardSharePort, err = intVar(getenv, "CARD_SHARE_PORT", 0, 0, 65535); err != nil {
 		return nil, err
 	}
@@ -156,6 +162,16 @@ func intVar(getenv func(string) string, name string, d, lo, hi int) (int, error)
 var defaultShareNetworks = []string{
 	"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
 	"::1/128", "fc00::/7", "fe80::/10",
+}
+
+// ValidateCardURL は鍵を貰う URL が http://ホスト:ポート か確かめます。
+// 鍵を配るポートは平文の HTTP なので、https は受けません。
+func ValidateCardURL(u string) error {
+	parsed, err := url.Parse(u)
+	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
+		return fmt.Errorf("CARD_URL は http://ホスト:ポート にします (%q)", u)
+	}
+	return nil
 }
 
 // ParseShareNetworks は CARD_SHARE_NETWORKS の文字列を読み、既定の範囲の中に

@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,7 +23,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/b25"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/backend"
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/cardshare"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/config"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/logx"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/tlsx"
@@ -56,6 +59,10 @@ type harness struct {
 }
 
 func start(t *testing.T) *harness {
+	return startEnv(t, nil)
+}
+
+func startEnv(t *testing.T, extra map[string]string) *harness {
 	t.Helper()
 	dir := t.TempDir()
 	exe, _ := os.Executable()
@@ -64,6 +71,9 @@ func start(t *testing.T) *harness {
 		"TUNERS_FILE": filepath.Join(dir, "config", "tuners.json"), "CHANNELS_FILE": filepath.Join(dir, "config", "channels.json"),
 		"DEVICES_FILE": filepath.Join(dir, "config", "devices.json"), "DENPA_HOME": dir, "RAW_DIR": filepath.Join(dir, "raw"),
 		"FAKE_TUNE": exe, "AGENT_PAIR_TOKEN": strings.Repeat("t", 43), "AGENT_NAME": "テスト機", "DENPA_VERSION": "9.9",
+	}
+	for k, v := range extra {
+		env[k] = v
 	}
 	cfg, err := config.Load(func(k string) string { return env[k] }, "linux", exe)
 	if err != nil {
@@ -398,5 +408,86 @@ func TestTuners_自動検出に戻したら検出済みのチューナーが戻�
 	code, b = h.do(t, "PUT", "/denpa/tuners", map[string]any{"tuners": []any{}})
 	if code != 200 || !strings.Contains(string(b), "auto0") {
 		t.Fatalf("2 回目も戻る: %d %s", code, b)
+	}
+}
+
+// fakeShareLocal は試験で鍵を配る側に渡すカードです。決まった値を返します。
+type fakeShareLocal struct{}
+
+func (fakeShareLocal) Info() (b25.Info, error) {
+	info := b25.Info{
+		CASystemID: 0x0005,
+		IDs:        []b25.CardID{{0x00, 0x01, 0x23, 0x45, 0x67, 0x89}},
+	}
+	for i := range info.SystemKey {
+		info.SystemKey[i] = byte(0x10 + i)
+	}
+	for i := range info.CBCInit {
+		info.CBCInit[i] = byte(0xa0 + i)
+	}
+	return info, nil
+}
+
+func (fakeShareLocal) ECM(ecm []byte) (b25.ECMResult, error) {
+	var answer b25.ECMResult
+	for i := range answer.Odd {
+		answer.Odd[i] = 0x11
+	}
+	for i := range answer.Even {
+		answer.Even[i] = 0x22
+	}
+	answer.Code = 0x0200
+	return answer, nil
+}
+
+func (fakeShareLocal) Confirm(ctx context.Context, verification []byte, mjd int) (int, error) {
+	return 0x0800, nil
+}
+
+func (fakeShareLocal) EMMNow(payload []byte) (int, error) { return 0x2100, nil }
+
+// TestApp_CardURL_配る側のカード番号を返す は、CARD_URL を書いたとき、
+// /denpa/card が source "remote" と配る側のカード番号を返すことを確かめます。
+func TestApp_CardURL_配る側のカード番号を返す(t *testing.T) {
+	nets, err := config.ParseShareNetworks(config.DefaultShareNetworks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	share := cardshare.New(0, nets, fakeShareLocal{}, nil, func(format string, args ...any) {})
+	if err := share.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = share.Close() })
+	_, port, err := net.SplitHostPort(share.Addr())
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "http://127.0.0.1:" + port
+	h := startEnv(t, map[string]string{"CARD_URL": url})
+	h.pair(t)
+	code, b := h.do(t, "GET", "/denpa/card", nil)
+	if code != 200 {
+		t.Fatalf("/denpa/card が %d: %s", code, b)
+	}
+	var res map[string]any
+	if err := json.Unmarshal(b, &res); err != nil {
+		t.Fatal(err)
+	}
+	if res["source"] != "remote" {
+		t.Fatalf("source が remote ではありません: %s", b)
+	}
+	if res["remote"] != url {
+		t.Fatalf("remote が違います: %s", b)
+	}
+	ids, ok := res["ids"].([]any)
+	if !ok || len(ids) != 1 || ids[0] != "0000004886718345" {
+		t.Fatalf("ids が違います: %s", b)
+	}
+	readers, ok := res["readers"].([]any)
+	if !ok || len(readers) != 0 {
+		t.Fatalf("readers が空ではありません: %s", b)
+	}
+	if res["ok"] != true {
+		t.Fatalf("ok が true ではありません: %s", b)
 	}
 }

@@ -703,7 +703,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 3. TTL (IPv6 は hop limit) を `CARD_TTL` (既定 1、上限 8) にする。待ち受けと受けた接続の両方に付け、IPv4 と IPv6 は別のソケットで待つ。貰う側も繋ぐ前に付ける
 4. `CARD_SHARE_MAX_RTT` (ミリ秒) を書いたときは、OS が TCP から測った往復時間 (Linux `TCP_INFO`、macOS `TCP_CONNECTION_INFO`、Windows `SIO_TCP_INFO`) が超える相手に配らない
 
-貰う側 (`CARD_URL`) は、起動時と ECM のたびに上の API を呼び、応答を 10 秒まで待ちます。`/denpa/card` には `source: "remote"` と `remote: <URL>` と配る側のカード番号を返します。
+貰う側 (`CARD_URL`) は、起動時と ECM のたびに上の API を呼び、応答を 10 秒まで待ちます。`/denpa/card` には `source: "remote"` と `remote: <URL>` と配る側のカード番号を返します。`CARD_SHARE_PORT` も書いたときは、配る側は手元のカードを配ります。貰った鍵をさらに配ることはしません。
 
 ### 9.6 カードの状態 (`GET /denpa/card`)
 
