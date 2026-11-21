@@ -46,6 +46,23 @@ GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0   go build -trimpath -ta
 
 実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。実放送の約 16.5 Mbps を TLS で流すと、エージェントは 1 コアの約 90%、コア全体は 94〜97% で、余裕がほとんど無い。大半は TLS の暗号 (純 Go の ChaCha20-Poly1305) です。さらに denpa は、視聴中に同じ TS をロゴの取得でもう 1 本読み続けるので、実際には 2 本ぶん要ります)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。暗号の MIPS アセンブリ化 (エージェントの CPU が約半分になり、denpa の視聴 (2 本) でも 1 コアに収まった) は検討中です ([#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。
 
+### Docker とリリース
+
+タグ `v*` を push すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして、GHCR に `ghcr.io/maimainoue/denpa-px4-agent:latest` などを公開します。Actions から手動で実行したときは、`dev-<短い SHA>` のタグで出します。手元で作るときは次のとおりです。
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 \
+  --build-arg VERSION=v0.1.0 -t ghcr.io/maimainoue/denpa-px4-agent:latest .
+```
+
+リリース用のバイナリ (linux・windows・macOS・nasne 向け mipsle) は、スクリプトで作ります。`dist/` に出ます。
+
+```sh
+VERSION=v0.1.0 bash scripts/build-release.sh
+```
+
+denpa と一緒に使うときは、`deploy/compose.override.yml` を denpa の `compose.yml` と同じフォルダに置きます。
+
 ### 未実装・未確認
 
 - A-CAS カードは B-CAS 互換モードで使えます (B-CAS の INT が断られたら P2 を変えて開き直す)。実機の A-CAS カード (外付けの SCR3310) と、ケーブル回線で、MPEG-2 TS のスクランブルを復号できることを確かめました。契約確認 (`0x3C`) の P2 は未確認です。4K の MMT/TLV (ARIB STD-B61) は、A-CAS のカードで復号します ([docs/b61.md](docs/b61.md)。実機のケーブル回線で、復号の結果の形まで確かめました。映像として再生できるかは denpa 側で確認が要ります)
