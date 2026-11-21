@@ -35,6 +35,10 @@ type Config struct {
 	CardURL           string
 	CardSharePort     int
 	CardShareNetworks string
+	// CardTTL は鍵を配るときと貰うときの TTL (IPv6 は hop limit)。既定 1、1〜8。
+	CardTTL int
+	// CardShareMaxRTTMs は配る側が見る往復時間の上限 (ミリ秒)。0 なら見ません。
+	CardShareMaxRTTMs int
 	PcscSock          string
 	RuntimeDir        string
 	DriverHostPath    string
@@ -117,6 +121,12 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 		if _, err := ParseShareNetworks(c.CardShareNetworks); err != nil {
 			return nil, err
 		}
+	}
+	if c.CardTTL, err = intVar(getenv, "CARD_TTL", 1, 1, 8); err != nil {
+		return nil, err
+	}
+	if c.CardShareMaxRTTMs, err = intVar(getenv, "CARD_SHARE_MAX_RTT", 0, 0, 1<<31-1); err != nil {
+		return nil, err
 	}
 	c.PcscSock = def(getenv("PCSCLITE_CSOCK_NAME"), "/run/pcscd/pcscd.comm")
 	c.RuntimeDir = def(getenv("PX4_RUNTIME_DIR"), "/tmp")

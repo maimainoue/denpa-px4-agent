@@ -151,7 +151,7 @@ func (a *App) Start(ctx context.Context) error {
 		a.Log.Printf("チューナーの定義がありません。挿さっている機材を探します")
 	}
 	if a.Cfg.CardURL != "" {
-		a.Card.SetRemote(cardshare.NewRemoteCard(a.Cfg.CardURL, a.Log.Printf))
+		a.Card.SetRemote(cardshare.NewRemoteCard(a.Cfg.CardURL, a.Cfg.CardTTL, a.Log.Printf))
 		a.Log.Printf("鍵を貰います (%s)", a.Cfg.CardURL)
 	}
 	a.Card.Start(ctx)
@@ -161,7 +161,7 @@ func (a *App) Start(ctx context.Context) error {
 			return fmt.Errorf("CARD_SHARE_NETWORKS が読めません (%v)", err)
 		}
 		// 配る側は手元のカードだけを配ります。CARD_URL を書いていても、貰った鍵をさらに配ることはしません。
-		a.share = cardshare.New(a.Cfg.CardSharePort, nets, a.Card.LocalCard(), wrapListener, a.Log.Printf)
+		a.share = cardshare.New(a.Cfg.CardSharePort, nets, a.Card.LocalCard(), wrapListener, a.Cfg.CardTTL, a.Cfg.CardShareMaxRTTMs, a.Log.Printf)
 		if err := a.share.Start(); err != nil {
 			return err
 		}

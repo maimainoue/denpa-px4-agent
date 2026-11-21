@@ -39,7 +39,7 @@ const remoteDownBackoff = 5 * time.Second
 func (e *ShareRefused) Error() string { return e.Message }
 
 // RemoteCard はカードを持っていない拠点です。ECM を送って鍵だけ受け取ります。
-// 繋ぐのは LAN の中だけという前提です。TTL は PR 4 で入るので、ここでは付けていません。
+// 繋ぐのは LAN の中だけという前提です。接続には TTL を付けます (既定 1)。
 type RemoteCard struct {
 	url  string
 	logf func(format string, args ...any)
@@ -58,8 +58,8 @@ type RemoteCard struct {
 }
 
 // NewRemoteCard は貰う側のカードを作ります。url は配る側の CARD_SHARE_PORT の
-// ポートを指す http://ホスト:ポート です。
-func NewRemoteCard(url string, logf func(format string, args ...any)) *RemoteCard {
+// ポートを指す http://ホスト:ポート です。hops は CARD_TTL (1〜8) です。
+func NewRemoteCard(url string, hops int, logf func(format string, args ...any)) *RemoteCard {
 	if logf == nil {
 		logf = func(format string, args ...any) {}
 	}
@@ -68,6 +68,9 @@ func NewRemoteCard(url string, logf func(format string, args ...any)) *RemoteCar
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{
 				Timeout: 5 * time.Second,
+				Control: func(network, address string, c syscall.RawConn) error {
+					return setSocketTTL(c, network, hops)
+				},
 			}).DialContext,
 			TLSHandshakeTimeout: 5 * time.Second,
 		},
@@ -267,16 +270,16 @@ func (r *RemoteCard) unreachable(err error) error {
 			if errors.Is(sysErr.Err, syscall.ETIMEDOUT) ||
 				errors.Is(sysErr.Err, syscall.EHOSTUNREACH) ||
 				errors.Is(sysErr.Err, syscall.ENETUNREACH) {
-				return fmt.Errorf("鍵を配る拠点に繋がりません (%v)。ルーターを越えた先や LAN の外には届きません", err)
+				return fmt.Errorf("鍵を配る拠点に繋がりません (%v)。ルーターを越えた先や LAN の外には届きません (CARD_TTL)", err)
 			}
 		}
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
-		return fmt.Errorf("鍵を配る拠点から応答がありません")
+		return fmt.Errorf("鍵を配る拠点から応答がありません。ルーターを越えた先や LAN の外には届きません (CARD_TTL)")
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) && netErr.Timeout() {
-		return fmt.Errorf("鍵を配る拠点から応答がありません")
+		return fmt.Errorf("鍵を配る拠点から応答がありません。ルーターを越えた先や LAN の外には届きません (CARD_TTL)")
 	}
 	return fmt.Errorf("鍵を配る拠点に繋がりません: %v", err)
 }
