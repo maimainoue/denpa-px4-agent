@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,13 +31,14 @@ type Config struct {
 	ShutdownWait time.Duration
 	Version      string
 
-	CardURL        string
-	CardSharePort  int
-	PcscSock       string
-	RuntimeDir     string
-	DriverHostPath string
-	DriverHostIni  string
-	FakeTune       string
+	CardURL           string
+	CardSharePort     int
+	CardShareNetworks string
+	PcscSock          string
+	RuntimeDir        string
+	DriverHostPath    string
+	DriverHostIni     string
+	FakeTune          string
 	// StreamQueueBytes は利用者ごとの溜める上限 (STREAM_QUEUE_BYTES)。0 なら既定の 64MB。
 	// メモリの小さい機材 (nasne の上) で下げる (仕様書 6.5)。
 	StreamQueueBytes int64
@@ -104,6 +106,12 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 	if c.CardSharePort != 0 && c.CardSharePort == c.Port {
 		return nil, fmt.Errorf("CARD_SHARE_PORT は AGENT_PORT と別の値にします")
 	}
+	c.CardShareNetworks = def(getenv("CARD_SHARE_NETWORKS"), DefaultShareNetworks())
+	if c.CardSharePort != 0 {
+		if _, err := ParseShareNetworks(c.CardShareNetworks); err != nil {
+			return nil, err
+		}
+	}
 	c.PcscSock = def(getenv("PCSCLITE_CSOCK_NAME"), "/run/pcscd/pcscd.comm")
 	c.RuntimeDir = def(getenv("PX4_RUNTIME_DIR"), "/tmp")
 	hostName := "DriverHost_PX4"
@@ -141,4 +149,108 @@ func intVar(getenv func(string) string, name string, d, lo, hi int) (int, error)
 		return 0, fmt.Errorf("%s は %d〜%d の整数にします (%s)", name, lo, hi, s)
 	}
 	return n, nil
+}
+
+// defaultShareNetworks は鍵を配る相手の既定の範囲です。仕様書 9.5。
+// CGNAT (100.64.0.0/10) は入れません。Tailscale などが拠点の外を同じ網に見せるためです。
+var defaultShareNetworks = []string{
+	"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+	"::1/128", "fc00::/7", "fe80::/10",
+}
+
+// ParseShareNetworks は CARD_SHARE_NETWORKS の文字列を読み、既定の範囲の中に
+// 収まっているか確かめます。範囲かアドレス 1 つをカンマで区切ります。
+func ParseShareNetworks(s string) ([]*net.IPNet, error) {
+	defaults := mustParseNetworks(defaultShareNetworks)
+	var out []*net.IPNet
+	for _, part := range strings.Split(s, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			return nil, fmt.Errorf("CARD_SHARE_NETWORKS を読めません (空の範囲があります)")
+		}
+		var n *net.IPNet
+		if strings.Contains(part, "/") {
+			_, parsed, err := net.ParseCIDR(part)
+			if err != nil {
+				return nil, fmt.Errorf("CARD_SHARE_NETWORKS を読めません (%q)", part)
+			}
+			n = parsed
+		} else {
+			ip := net.ParseIP(part)
+			if ip == nil {
+				return nil, fmt.Errorf("CARD_SHARE_NETWORKS を読めません (%q)", part)
+			}
+			bits := 128
+			if ip4 := ip.To4(); ip4 != nil {
+				ip = ip4
+				bits = 32
+			}
+			n = &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)}
+		}
+		if !withinAny(n, defaults) {
+			return nil, fmt.Errorf("CARD_SHARE_NETWORKS に %s は書けません (LAN の中だけです)", part)
+		}
+		out = append(out, n)
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("CARD_SHARE_NETWORKS を読めません (範囲がありません)")
+	}
+	return out, nil
+}
+
+func mustParseNetworks(list []string) []*net.IPNet {
+	var out []*net.IPNet
+	for _, s := range list {
+		_, n, err := net.ParseCIDR(s)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// withinAny は範囲 n が既定の範囲のどれか 1 つにすっぽり収まっているかです。
+func withinAny(n *net.IPNet, defaults []*net.IPNet) bool {
+	for _, d := range defaults {
+		if containsNet(d, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsNet は外側の範囲 outer が内側の範囲 inner をすっぽり含んでいるかです。
+// IPv4 射影アドレス (::ffff:192.168.1.2) は IPv4 として見ます。
+func containsNet(outer, inner *net.IPNet) bool {
+	outerIP := outer.IP
+	innerIP := inner.IP
+	if outerIP.To4() != nil && innerIP.To4() != nil {
+		outerIP = outerIP.To4()
+		innerIP = innerIP.To4()
+	} else if (outerIP.To4() == nil) != (innerIP.To4() == nil) {
+		return false
+	}
+	outerOnes, outerBits := outer.Mask.Size()
+	innerOnes, innerBits := inner.Mask.Size()
+	if outerBits != innerBits || innerOnes < outerOnes {
+		return false
+	}
+	return outer.Contains(innerIP) && outer.Contains(lastIP(inner))
+}
+
+// lastIP は範囲のいちばん後ろのアドレスです。
+func lastIP(n *net.IPNet) net.IP {
+	ip := n.IP
+	mask := n.Mask
+	out := make(net.IP, len(ip))
+	for i := range ip {
+		out[i] = ip[i] | ^mask[i]
+	}
+	return out
+}
+
+// DefaultShareNetworks は既定の範囲の文字列です。画面に出すときに使います。
+func DefaultShareNetworks() string {
+	return strings.Join(defaultShareNetworks, ",")
 }
