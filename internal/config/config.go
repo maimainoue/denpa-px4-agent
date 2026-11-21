@@ -164,8 +164,6 @@ var defaultShareNetworks = []string{
 	"::1/128", "fc00::/7", "fe80::/10",
 }
 
-// ParseShareNetworks は CARD_SHARE_NETWORKS の文字列を読み、既定の範囲の中に
-// 収まっているか確かめます。範囲かアドレス 1 つをカンマで区切ります。
 // ValidateCardURL は鍵を貰う URL が http://ホスト:ポート か確かめます。
 // 鍵を配るポートは平文の HTTP なので、https は受けません。
 func ValidateCardURL(u string) error {
@@ -176,6 +174,8 @@ func ValidateCardURL(u string) error {
 	return nil
 }
 
+// ParseShareNetworks は CARD_SHARE_NETWORKS の文字列を読み、既定の範囲の中に
+// 収まっているか確かめます。範囲かアドレス 1 つをカンマで区切ります。
 func ParseShareNetworks(s string) ([]*net.IPNet, error) {
 	defaults := mustParseNetworks(defaultShareNetworks)
 	var out []*net.IPNet

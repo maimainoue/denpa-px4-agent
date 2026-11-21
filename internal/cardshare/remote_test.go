@@ -3,10 +3,13 @@ package cardshare
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/b25"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/card"
@@ -129,5 +132,103 @@ func TestRemoteCardRefused(t *testing.T) {
 	}
 	if !strings.Contains(refused.Message, "CARD_URL") {
 		t.Fatalf("CARD_URL の案内が入っていません: %s", refused.Message)
+	}
+}
+
+// TestRemoteCardUnreachable は、配る側が閉じているとき、開いているか確かめる案内が出ることを確かめます。
+func TestRemoteCardUnreachable(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	remote := NewRemoteCard("http://"+addr, func(format string, args ...any) {})
+	_, err = remote.Check()
+	if err == nil || !strings.Contains(err.Error(), "CARD_SHARE_PORT を開いているか確かめてください") {
+		t.Fatalf("繋がらないときの案内が出ません: %v", err)
+	}
+}
+
+// TestRemoteCardResponseTooLarge は、配る側の応答が大きすぎるとき、読むのをやめることを確かめます。
+func TestRemoteCardResponseTooLarge(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write(make([]byte, maxResponseBody+1))
+	}))
+	defer srv.Close()
+	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	_, err := remote.Check()
+	if err == nil || !strings.Contains(err.Error(), "大きすぎます") {
+		t.Fatalf("大きすぎる応答がエラーになりません: %v", err)
+	}
+}
+
+// TestRemoteCardNoRedirect は、配る側が別のホストへ向けても、追わないことを確かめます。
+func TestRemoteCardNoRedirect(t *testing.T) {
+	otherHits := 0
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		otherHits++
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	_, err := remote.Ecm([]byte{0x00, 0x01, 0x02, 0x03, 0x04, 0xaa, 0xbb, 0xcc})
+	if err == nil {
+		t.Fatal("307 がエラーになりません")
+	}
+	if otherHits != 0 {
+		t.Fatalf("別のホストへ %d 回送っています", otherHits)
+	}
+}
+
+// TestRemoteCardDownBackoff は、配る側に繋がらなかったあと、しばらく試さないことを確かめます。
+func TestRemoteCardDownBackoff(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		// 応答せずに切ります。繋がらなかったことになります。
+		hj, ok := w.(http.Hijacker)
+		if !ok {
+			t.Error("Hijack できません")
+			return
+		}
+		conn, _, err := hj.Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		conn.Close()
+	}))
+	defer srv.Close()
+	remote := NewRemoteCard(srv.URL, func(format string, args ...any) {})
+	remote.downBackoff = 200 * time.Millisecond
+	ecm := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0xaa, 0xbb, 0xcc}
+	if _, err := remote.Ecm(ecm); err == nil {
+		t.Fatal("1 回目がエラーになりません")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("1 回目に %d 回送っています", n)
+	}
+	// すぐの 2 回目は、試さずに前回の理由を返します。
+	start := time.Now()
+	if _, err := remote.Ecm(ecm); err == nil {
+		t.Fatal("2 回目がエラーになりません")
+	}
+	if took := time.Since(start); took > 100*time.Millisecond {
+		t.Fatalf("2 回目に %v かかっています", took)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("2 回目に送っています (%d 回)", n)
+	}
+	// 間が過ぎれば、また試します。
+	time.Sleep(250 * time.Millisecond)
+	if _, err := remote.Ecm(ecm); err == nil {
+		t.Fatal("3 回目がエラーになりません")
+	}
+	if n := calls.Load(); n != 2 {
+		t.Fatalf("3 回目に %d 回送っています", n)
 	}
 }
