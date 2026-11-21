@@ -593,13 +593,13 @@ func TestTune_SKYは同期しなければずらした周波数でもう一度(t 
 		return freqs, tunes
 	}
 
-	// H11 はずらす対象: 1 回目が駄目でも、+6500 kHz でもう一度選局して成功する。
+	// H11 はずらす対象: 1 回目が駄目でも、+1000 kHz でもう一度選局して成功する。
 	tn, h := newSkyTuner(1)
 	if err := tn.Tune(backend.Tuning{Type: "SKY", Channel: "H11"}); err != nil {
 		t.Fatalf("H11: %v", err)
 	}
 	freqs, tunes := probe(h)
-	want := []uint32{93250 + 10*6500, 93250 + 10*6500 + 6500}
+	want := []uint32{93250 + 10*6500, 93250 + 10*6500 + 1000}
 	if len(freqs) != len(want) || tunes != 2 {
 		t.Fatalf("H11: SET_PARAMS の周波数 %v、TUNE %d 回 (want %v、2 回)", freqs, tunes, want)
 	}
