@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/b25"
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/listen"
 )
 
 // LocalCard は配る側が手元のカードに求めるものです。card.Manager が満たします。
@@ -80,6 +81,8 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("鍵を配る待ち受けが作れません (%v)", err)
 	}
+	// accept4 の無い古いカーネル (nasne の 2.6.29) では accept に切り替える (App.Listen と同じ)。
+	ln = listen.Wrap(ln)
 	srv := &http.Server{
 		Handler: s.checkPeer(mux),
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
@@ -91,6 +94,13 @@ func (s *Server) Start() error {
 		IdleTimeout:       s.idleTimeout,
 	}
 	s.mu.Lock()
+	if s.closed {
+		// 公開する前に閉じられていたら、作った待ち受けを閉じてエラーを返します。
+		// このまま公開すると、以後 Close しても待ち受けが残ります。
+		s.mu.Unlock()
+		ln.Close()
+		return fmt.Errorf("鍵を配る待ち受けは閉じています")
+	}
 	s.ln = ln
 	s.srv = srv
 	s.mu.Unlock()

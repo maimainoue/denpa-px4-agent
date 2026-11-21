@@ -21,6 +21,7 @@ import (
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/cardshare"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/config"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/devices"
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/listen"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/logx"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/manager"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/store"
@@ -301,7 +302,7 @@ func (a *App) Listen() (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return wrapListener(ln), nil // accept4 の無い古いカーネル (nasne の 2.6.29) では accept に切り替える
+	return listen.Wrap(ln), nil // accept4 の無い古いカーネル (nasne の 2.6.29) では accept に切り替える
 }
 
 // PairURL は組むときの URL。

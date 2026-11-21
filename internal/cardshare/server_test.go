@@ -237,6 +237,21 @@ func mustNets(t *testing.T) []*net.IPNet {
 	return nets
 }
 
+// TestShareServerStartAfterClose は、閉じたあとの Start が待ち受けを残さないことを確かめます。
+func TestShareServerStartAfterClose(t *testing.T) {
+	srv := New(0, mustNets(t), fakeLocal{}, func(format string, args ...any) {})
+	if err := srv.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.Start(); err == nil {
+		t.Fatal("閉じたあとの Start が成功しました")
+		_ = srv.Close()
+	}
+	if addr := srv.Addr(); addr != "" {
+		t.Fatalf("閉じたあとの Start で待ち受けが残っています: %s", addr)
+	}
+}
+
 // TestShareServerStalledBody は、本文を途中で止めた接続が切られることを確かめます。
 // ヘッダーを送ったあと 10 バイトだけ送って止めると、ReadTimeout で切断されます。
 // 切るときに 500 が返ることもありますが、応答の有無は問いません。切られることが大事です。
