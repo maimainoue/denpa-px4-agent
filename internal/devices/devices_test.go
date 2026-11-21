@@ -180,3 +180,27 @@ func TestBuiltin_nasneはHTTPで呼ぶ(t *testing.T) {
 		t.Error("15V は出せないはず")
 	}
 }
+
+func TestBuiltin_nasneの生のTS(t *testing.T) {
+	d, ok := Builtin().Get("Sony nasne (nasne-recpt1 HTTP raw)")
+	if !ok {
+		t.Fatal("組み込みに nasne (生の TS) が無い")
+	}
+	if want := "http://{device}:8301/tuner/{channel}?bcas=0"; d.URL != want || !d.IsHTTP() {
+		t.Errorf("url: %q (want %q)", d.URL, want)
+	}
+	// B-CAS を使わない生の TS: 復号はエージェントが行い、全部の局を含むので 1 サービスの制限もない
+	if d.DecryptedByDevice || d.SingleService {
+		t.Errorf("decryptedByDevice=%v singleService=%v (どちらも false のはず)", d.DecryptedByDevice, d.SingleService)
+	}
+	if err := d.Validate(); err != nil {
+		t.Errorf("Validate: %v", err)
+	}
+	if got := d.Receivable(); len(got) != 3 || got[0] != "GR" || got[1] != "BS" || got[2] != "CS" {
+		t.Errorf("receivable: %v", got)
+	}
+	// 同じ機種名の前方一致で、B-CAS ありの機種と取り違えない
+	if d2, _ := Builtin().Get("Sony nasne (nasne-recpt1 HTTP)"); d2 == nil || d2.URL == d.URL {
+		t.Error("B-CAS ありの nasne の定義と区別できない")
+	}
+}

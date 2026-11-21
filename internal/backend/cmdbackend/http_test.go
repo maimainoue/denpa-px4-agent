@@ -256,3 +256,19 @@ func TestHTTP_deviceにパスを混ぜられない(t *testing.T) {
 		t.Errorf("正しい host を断った: %v", err)
 	}
 }
+
+func TestHTTP_組み込みのnasneの2機種を取り違えない(t *testing.T) {
+	b := New(Config{Defs: devices.Builtin()})
+	for dev, want := range map[string]string{
+		"cmd:Sony nasne (nasne-recpt1 HTTP):192.168.0.43":     "http://{device}:8301/tuner/{channel}{sidQuery}",
+		"cmd:Sony nasne (nasne-recpt1 HTTP raw):192.168.0.43": "http://{device}:8301/tuner/{channel}?bcas=0",
+	} {
+		def, host, err := b.resolve(backend.TunerSpec{Name: "N", Device: dev})
+		if err != nil {
+			t.Fatal(dev, err)
+		}
+		if def.URL != want || host != "192.168.0.43" {
+			t.Errorf("%s: url=%q host=%q", dev, def.URL, host)
+		}
+	}
+}
