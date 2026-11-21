@@ -69,17 +69,18 @@ func TestWChars(t *testing.T) {
 // ---- 偽の DriverHost_PX4 ----
 
 type fakeHost struct {
-	l        Layout
-	mu       sync.Mutex
-	ctrl     [][]byte
-	data     [][]byte
-	cardReqs [][]byte
-	failTune bool
-	failOpen bool
-	ts       []byte
-	cnrMdB   int32
-	readers  []string
-	dataID   uint32
+	l         Layout
+	mu        sync.Mutex
+	ctrl      [][]byte
+	data      [][]byte
+	cardReqs  [][]byte
+	failTune  bool
+	failTunes int // TUNE を最初の何回だけ失敗させる (0 は失敗させない)
+	failOpen  bool
+	ts        []byte
+	cnrMdB    int32
+	readers   []string
+	dataID    uint32
 }
 
 type fakeTr struct{ h *fakeHost }
@@ -159,8 +160,11 @@ func (h *fakeHost) serve(p Pipe, c net.Conn) {
 				binary.LittleEndian.PutUint32(resp[len(resp)-4:], 77) // data_id
 				h.dataID = 77
 			case cmdTune:
-				if h.failTune {
+				if h.failTune || h.failTunes > 0 {
 					status = statusFail
+					if h.failTunes > 0 {
+						h.failTunes--
+					}
 				}
 			case cmdCheckLock:
 				resp[8] = 1
@@ -552,5 +556,74 @@ func TestFeed_DriverHostが閉じたら読み手は機材が抜かれた扱い(t
 	}
 	if _, err := r.Read(buf); !errors.Is(err, backend.ErrUnplugged) {
 		t.Errorf("got %v", err)
+	}
+}
+
+func TestTune_SKYは同期しなければずらした周波数でもう一度(t *testing.T) {
+	// 受信機 0 が SKY の機材。GUID は組み込みの PX-W3U4 のものを使う (fake なので中身は問わない)。
+	defs := devices.NewDefs()
+	defs.Put(devices.Def{
+		Model:     "TEST SKY",
+		Host:      &devices.Host{DeviceGUID: guidW3U4},
+		Receivers: []devices.Receiver{{Index: 0, Types: []string{"SKY"}}},
+	})
+	newSkyTuner := func(failTunes int) (backend.Tuner, *fakeHost) {
+		t.Helper()
+		h := &fakeHost{l: LayoutWindows, failTunes: failTunes}
+		h.ts = bytes.Repeat([]byte{0x47}, 188*4)
+		tn, err := Open(defs, &fakeTr{h}, nil, backend.TunerSpec{Name: "TEST SKY #0", Device: "px4host:" + guidW3U4 + ":0:1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { tn.Close() })
+		return tn, h
+	}
+	// SET_PARAMS の周波数と TUNE の回数を数える。
+	probe := func(h *fakeHost) (freqs []uint32, tunes int) {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		for _, r := range h.ctrl {
+			switch binary.LittleEndian.Uint32(r) {
+			case cmdSetParams:
+				freqs = append(freqs, binary.LittleEndian.Uint32(r[12:]))
+			case cmdTune:
+				tunes++
+			}
+		}
+		return freqs, tunes
+	}
+
+	// H11 はずらす対象: 1 回目が駄目でも、+1000 kHz でもう一度選局して成功する。
+	tn, h := newSkyTuner(1)
+	if err := tn.Tune(backend.Tuning{Type: "SKY", Channel: "H11"}); err != nil {
+		t.Fatalf("H11: %v", err)
+	}
+	freqs, tunes := probe(h)
+	want := []uint32{93250 + 10*6500, 93250 + 10*6500 + 1000}
+	if len(freqs) != len(want) || tunes != 2 {
+		t.Fatalf("H11: SET_PARAMS の周波数 %v、TUNE %d 回 (want %v、2 回)", freqs, tunes, want)
+	}
+	for i := range want {
+		if freqs[i] != want[i] {
+			t.Errorf("H11: SET_PARAMS[%d] の周波数 %d (want %d)", i, freqs[i], want[i])
+		}
+	}
+
+	// H01 はずらす対象でない: 1 回駄目ならそのまま同期しなかった。
+	tn, h = newSkyTuner(1)
+	if err := tn.Tune(backend.Tuning{Type: "SKY", Channel: "H01"}); !errors.Is(err, backend.ErrNoLock) {
+		t.Errorf("H01: %v", err)
+	}
+	if freqs, tunes := probe(h); len(freqs) != 1 || freqs[0] != 93250 || tunes != 1 {
+		t.Errorf("H01: SET_PARAMS の周波数 %v、TUNE %d 回 (want [93250]、1 回)", freqs, tunes)
+	}
+
+	// H11 でも 2 回駄目なら同期しなかった。
+	tn, h = newSkyTuner(2)
+	if err := tn.Tune(backend.Tuning{Type: "SKY", Channel: "H11"}); !errors.Is(err, backend.ErrNoLock) {
+		t.Errorf("H11 2 回駄目: %v", err)
+	}
+	if _, tunes := probe(h); tunes != 2 {
+		t.Errorf("H11 2 回駄目: TUNE %d 回 (want 2 回)", tunes)
 	}
 }

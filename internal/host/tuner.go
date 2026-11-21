@@ -265,19 +265,15 @@ func (t *Tuner) Tune(tn backend.Tuning) error {
 	case uint32(SystemC):
 		params = []Param{{paramBandwidth, 6}, {paramTSMFStream, uint32(v.Stream)}}
 	}
-	resp, err := t.call(paramsReq(v.System, v.FreqKHz, params))
-	if err != nil {
-		return err
+	tuneErr := t.tuneOnce(v.System, v.FreqKHz, params)
+	if tuneErr != nil && v.System == uint32(SystemJ83) && errors.Is(tuneErr, backend.ErrNoLock) {
+		// J.83B は、駄目ならずらした周波数でもう一度 (仕様書 7.2)。
+		if shifted := ch.ShiftedFreqKHz(); shifted != 0 {
+			tuneErr = t.tuneOnce(v.System, shifted, params)
+		}
 	}
-	if respStatus(resp) != statusOK {
-		return fmt.Errorf("%s: 方式と周波数を指定できません (%s)", t.name(), ch)
-	}
-	resp, err = t.call(tuneReq(tuneTimeoutMs))
-	if err != nil {
-		return err
-	}
-	if respStatus(resp) != statusOK { // TSMF の TS が無いときも失敗するだけで区別できない
-		return fmt.Errorf("%s: %w", t.name(), backend.ErrNoLock)
+	if tuneErr != nil {
+		return tuneErr
 	}
 	t.sat, t.hasCh = sat, true
 	// 前のチャンネルの残りを捨てる。PURGE のあとの 1 塊も捨てる
@@ -286,6 +282,25 @@ func (t *Tuner) Tune(tn backend.Tuning) error {
 	if _, err := t.feed.conn.Write(dataCmd(dataPurge, 0)); err != nil {
 		t.resetLocked()
 		return fmt.Errorf("%s: %w", t.name(), backend.ErrUnplugged)
+	}
+	return nil
+}
+
+// tuneOnce は SET_PARAMS → TUNE を 1 回だけする。TUNE が同期しなければ ErrNoLock を返す。
+func (t *Tuner) tuneOnce(system, freqKHz uint32, params []Param) error {
+	resp, err := t.call(paramsReq(system, freqKHz, params))
+	if err != nil {
+		return err
+	}
+	if respStatus(resp) != statusOK {
+		return fmt.Errorf("%s: 方式と周波数を指定できません (%d kHz)", t.name(), freqKHz)
+	}
+	resp, err = t.call(tuneReq(tuneTimeoutMs))
+	if err != nil {
+		return err
+	}
+	if respStatus(resp) != statusOK { // TSMF の TS が無いときも失敗するだけで区別できない
+		return fmt.Errorf("%s: %w", t.name(), backend.ErrNoLock)
 	}
 	return nil
 }
