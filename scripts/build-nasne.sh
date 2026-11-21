@@ -68,14 +68,18 @@ build "$OUT" "-s -w"
 # アセンブリが本当に入ったか。-s を付けるとシンボルが消えるので、確認用に、-w だけで、もう 1 つ作る
 echo "== 確認: アセンブリが入っているか"
 build "$WORK/check" "-w"
+# grep -q は、最初の一致ですぐ終わるので、まだ書いている途中の go tool nm が SIGPIPE (終了コード 141) で死に、
+# pipefail でパイプライン全体が失敗になる (Linux で起きる。一致したのに「アセンブリが無い」と中止してしまう)。
+# そこで grep の出力は捨てるだけにして、最後まで読ませる。シンボルが本当に無いとき (grep が 1) と、
+# go tool nm 自体の失敗 (pipefail) は、これまでどおり検出できる。
 for sym in 'chacha20.xorKeyStream' 'poly1305.update'; do
-	if ! env GOROOT="$PGOROOT" PATH="$WORK/goroot/bin:$PATH" go tool nm "$WORK/check" | grep -q -E "${sym//./\\.}\$"; then
+	if ! env GOROOT="$PGOROOT" PATH="$WORK/goroot/bin:$PATH" go tool nm "$WORK/check" | grep -E "${sym//./\\.}\$" >/dev/null; then
 		echo "アセンブリが入っていません ($sym が無い)。中止します" >&2
 		rm -f "$OUT"
 		exit 1
 	fi
 done
-if ! go version -m "$OUT" | grep -q -- '-asmflags=all=-D=GOMIPS_r2'; then
+if ! go version -m "$OUT" | grep -- '-asmflags=all=-D=GOMIPS_r2' >/dev/null; then
 	echo "-D=GOMIPS_r2 が効いていません。中止します" >&2
 	rm -f "$OUT"
 	exit 1
