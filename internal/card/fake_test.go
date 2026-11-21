@@ -78,6 +78,34 @@ func TestFakeLink_APDU(t *testing.T) {
 	}
 }
 
+// TestFakeCard_FirstRegardlessOfOrder は、本物の Provider を先に登録しても、
+// FAKE_CARD=1 のときは試験カードが先に選ばれ、先に並ぶことを確かめます。
+// 登録の順は init の順 (ファイル名の順) に頼っているので、Manager の側の決めで直します。
+func TestFakeCard_FirstRegardlessOfOrder(t *testing.T) {
+	t.Setenv("FAKE_CARD", "1")
+	real := &fakeLink{}
+	fp := FakeProvider()
+	m := New([]Provider{
+		&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": real}},
+		fp,
+	}, nil, nil, Hooks{})
+	info, err := m.Info()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(info.IDs) != 1 || info.IDs[0] != [6]byte{0x00, 0x01, 0x23, 0x45, 0x67, 0x89} {
+		t.Fatalf("試験カードが先に選ばれません: %+v", info)
+	}
+	if real.count(0x30) != 0 {
+		t.Fatal("本物のリーダーに INT を送っています")
+	}
+	st := m.Status(context.Background())
+	readers, _ := st["readers"].([]map[string]any)
+	if len(readers) == 0 || readers[0]["name"] != "fake" {
+		t.Fatalf("/denpa/card で fake が先頭に並びません: %+v", st)
+	}
+}
+
 // TestFakeCard_Manager は、FAKE_CARD=1 のときに Manager が試験カードを使うことを確かめます。
 func TestFakeCard_Manager(t *testing.T) {
 	t.Setenv("FAKE_CARD", "1")

@@ -46,6 +46,10 @@ func (p *FakeCardProvider) List() ([]ReaderInfo, error) {
 	return []ReaderInfo{{Name: "fake", Internal: true}}, nil
 }
 
+// IsFakeCard は試験カードの Provider であることを表します。
+// Manager が、登録の順に関わらず試験カードを先に試すために使います。
+func (p *FakeCardProvider) IsFakeCard() bool { return FakeCardEnabled() }
+
 // Open は試験カードを開きます。名前は "fake" だけです。
 func (p *FakeCardProvider) Open(name string) (Link, error) {
 	if !FakeCardEnabled() || name != "fake" {

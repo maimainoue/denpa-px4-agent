@@ -653,6 +653,7 @@ Linux の pcscd には、pcsc-lite の socket (`/run/pcscd/pcscd.comm`。`PCSCLI
 - **排他で開きます** (PC/SC は `SCARD_SHARE_EXCLUSIVE`、カードのパイプは `EXCLUSIVE`、`T=1`)。開けなければ理由 (共有違反) を返し、少し置いて探し直します
 - 起動したときにカードを開いておきます (最初の選局がカードを開くのを待たない)。`CARD_URL` のときは手元のカードを使いません
 - 見つかったリーダーを内蔵 → 外付けの順に試し、**カードが挿さっていて INT に応答した最初の 1 つ**で開きます。使わない設定のリーダー (`cards.json`) は飛ばします
+- 試験カード (`FAKE_CARD=1`。`-tags fakecard` で組んだときだけ) は、登録の順に関わらず先に試します。`GET /denpa/card` でも先に並びます
 - リーダーが切れたら (カードの抜去・USB の抜去・socket やパイプが切れた)、探し直して INT からやり直します。繋ぎ直しに失敗したら 10 秒は探し直さず、同じ理由で断ります
 - pcscd・DriverHost_PX4・OS の PC/SC に繋がらなければ、`/denpa/card` に `ok: false` と理由 (`pcscd に繋がりません (<socket>)`、`DriverHost_PX4 に繋がりません (<パイプ>)`) を返します
 - 内蔵リーダーをカードのパイプで使うときは、`STATUS` を 5 秒ごとに送ってカードの有無を見ます (pcscd の `GET_STATUS_CHANGE` に当たるものが無い)
