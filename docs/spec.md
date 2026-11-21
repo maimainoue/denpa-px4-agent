@@ -431,7 +431,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 ```json
 {
   "model": "Sony nasne (nasne-recpt1 HTTP)",
-  "command": ["curl", "-sfN", "http://nasne.local:8301/tuner/{channel}{sidQuery}"],
+  "command": ["curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"],
   "channelFormat": "recpt1",
   "singleService": true,
   "decryptedByDevice": true,

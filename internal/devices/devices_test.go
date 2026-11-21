@@ -158,7 +158,7 @@ func TestBuiltin_nasneはHTTPで呼ぶ(t *testing.T) {
 	if !d.IsCmd() || d.ChannelFormat != FormatRecpt1 || !d.SingleService || !d.DecryptedByDevice {
 		t.Errorf("nasne の定義: %+v", d)
 	}
-	wantCmd := []string{"curl", "-sfN", "http://nasne.local:8301/tuner/{channel}{sidQuery}"}
+	wantCmd := []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"}
 	if len(d.Command) != len(wantCmd) {
 		t.Fatalf("command: %v", d.Command)
 	}
