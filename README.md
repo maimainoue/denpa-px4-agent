@@ -48,10 +48,19 @@ GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0   go build -trimpath -ta
 
 ### Docker とリリース
 
-タグ `v*` を push すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして、GHCR に `ghcr.io/maimainoue/denpa-px4-agent:latest` などを公開します。Actions から手動で実行したときは、`dev-<短い SHA>` のタグで出します。手元で作るときは次のとおりです。
+タグ `v*` を push すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして、GHCR に `ghcr.io/maimainoue/denpa-px4-agent:latest` などを公開します。Actions から手動で実行したときは、`dev-<短い SHA>` のタグで出します。Docker のイメージには `curl` が無いので、nasne (HTTP) の組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。
+
+手元で動かすときは、ホストの単一のプラットフォームにして、`--load` を足します。
 
 ```sh
-docker buildx build --platform linux/amd64,linux/arm64 \
+docker buildx build --platform linux/amd64 --load \
+  --build-arg VERSION=v0.1.0 -t denpa-px4-agent:local .
+```
+
+手元で公開するときは、複数のプラットフォームにして `--push` を使います (ふだんは、タグの push でワークフローが公開するので、手元で公開するときの書き方です)。
+
+```sh
+docker buildx build --platform linux/amd64,linux/arm64 --push \
   --build-arg VERSION=v0.1.0 -t ghcr.io/maimainoue/denpa-px4-agent:latest .
 ```
 

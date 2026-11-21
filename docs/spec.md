@@ -949,6 +949,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 ### Linux
 
 - Docker イメージは `gcr.io/distroless/static` に置く。`USER` は root のまま (デバイスファイルのグループが `video` で、コンテナの中のユーザーに合わせられないため。要れば `--group-add video` で変える)
+- Docker のイメージには `curl` が無いので、nasne (HTTP) の組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
 - denpa の `compose.override.yml` で `tuner-agent` を差し替える。px4_drv のメジャー番号は動的なので、`device_cgroup_rules` は `c *:* rmw` にし、`/dev` をディレクトリごと渡す。`/sys` は読み取りで渡す (機材の見分けに使う)
 - pcscd は、ホストの socket (`/run/pcscd`) を渡すか、コンテナの中で動かす。px4_drv の README「Docker 環境からカードリーダーにアクセスする場合」に従う。両方で動かすと競合する
 
