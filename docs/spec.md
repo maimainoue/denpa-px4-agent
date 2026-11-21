@@ -949,12 +949,13 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 
 ## 16. 配布
 
-- Go 1.23 以上。Linux と Windows は `CGO_ENABLED=0` で静的にビルド、macOS は cgo あり (PCSC.framework・IOKit)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
+- Go 1.23 以上。`CGO_ENABLED=0` で静的にビルドする (macOS も。今の実装は DriverHost_PX4 への UNIX ドメインソケットだけで、cgo を使わない)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
 - nasne 向けに `linux/mipsle` (`GOMIPS=softfloat`) も出す ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1) の置き方 B)。`cmd` バックエンドだけで、pcscd と chardev は使わない構成なので、リリースの表では「試験的」と書く
 
 ### Linux
 
 - Docker イメージは `gcr.io/distroless/static` に置く。`USER` は root のまま (デバイスファイルのグループが `video` で、コンテナの中のユーザーに合わせられないため。要れば `--group-add video` で変える)
+- Docker のイメージには `curl` が無いので、nasne (HTTP) の組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
 - denpa の `compose.override.yml` で `tuner-agent` を差し替える。px4_drv のメジャー番号は動的なので、`device_cgroup_rules` は `c *:* rmw` にし、`/dev` をディレクトリごと渡す。`/sys` は読み取りで渡す (機材の見分けに使う)
 - pcscd は、ホストの socket (`/run/pcscd`) を渡すか、コンテナの中で動かす。px4_drv の README「Docker 環境からカードリーダーにアクセスする場合」に従う。両方で動かすと競合する
 

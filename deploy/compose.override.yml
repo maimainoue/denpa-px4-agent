@@ -1,0 +1,25 @@
+# denpa の compose.override.yml です。仕様書 16 章。
+# denpa の compose.yml と同じフォルダに置き、
+#   docker compose -f compose.yml -f compose.override.yml up -d
+# で、denpa 付属のエージェントの代わりにこのエージェントを使います。
+# pcscd はホストの socket (/run/pcscd) を渡しています。
+# コンテナの中で pcscd を動かすときは、この行を外してください
+# (両方で動かすと競合します)。
+services:
+  tuner-agent:
+    image: ghcr.io/maimainoue/denpa-px4-agent:latest
+    cap_add: !reset []
+    # 注意: `c *:* rmw` と `/dev` の丸ごとの共有は、denpa 本体の compose.yml
+    # (DVB の `c 212:*` と USB の `c 189:*` だけ) より、ずっと広い権限です。
+    # px4_drv のメジャー番号が動的なので、この形にしています。
+    # 狭めるには、`/proc/devices` で `px4video` のメジャー番号を調べて、
+    # `device_cgroup_rules` をその番号だけ (`c <メジャー番号>:* rmw`) にします。
+    device_cgroup_rules: !override
+      - "c *:* rmw"
+    volumes: !override
+      - ./config:/config
+      - denpa-recorded:/media/raw
+      - /dev:/dev
+      - /sys:/sys:ro
+      - /run/pcscd:/run/pcscd
+    stop_grace_period: 6h5m
