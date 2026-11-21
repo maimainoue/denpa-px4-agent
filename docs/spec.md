@@ -135,7 +135,7 @@ type Tuner interface {
 | `lnb`                | 給電できる電圧の一覧 (`[15]`、`[11, 15]`、`[]`)。無い電圧を設定に書かれたら衛星の選局を断る                                                                                        |
 | `cardReader`         | 内蔵カードリーダーがあるか。Linux では pcscd のリーダー名の `[ID: …]`、host ではカードのパイプの `LIST_READERS` に出る                                                            |
 | `pairBySerial`       | PX-Q3 系のように、USB のシリアル番号の末尾 (`1`・`2`) で 2 つの USB デバイスを同じ筐体にまとめるか                                                                                   |
-| `command` / `channelFormat` / `lnbArg` / `env` | 書くと `cmd` バックエンドの機種になる ([6.1](#61-機材の定義の書き方))                                                                                                   |
+| `command` / `channelFormat` / `lnbArg` / `env` | 書くと `cmd` バックエンドの機種になる ([6.1](#61-機材の定義の書き方))。`command` の代わりに `url` を書くと、コマンドを起動せず、エージェントが HTTP の GET で TS を直接読む ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))                                                                                                   |
 | `singleService` / `decryptedByDevice` / `serviceArg` / `tsidArg` / `busyExitCode` | 1 サービスしか出ない機材と、機材の中で復号する機材のため ([6.4](#64-1-サービスしか出ない機材と機材の中で復号する機材))                                             |
 | `notes`              | 自由な文。画面には出さない                                                                                                                                                         |
 
@@ -356,6 +356,7 @@ DriverHost_PX4 の `SET_PARAMS` は方式を `systems` に含む受信機でだ�
 | 項目            | 意味                                                                                                                                                                               |
 | --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `command`       | 引数の配列 (シェルは通さない)。`{device}` は `tuners.json` の `device` の `cmd:<model>:` より後ろ、`{channel}` は `channelFormat` で直したチャンネル名、`{lnb}` は `lnbArg` の引数 (配列なので複数に展開。空なら消える) |
+| `url`           | `command` の代わりに書く (同時には書けない)。`http://` で始め、`command` と同じ `{device}`・`{channel}`・`{sidQuery}` などを展開した URL に、エージェントが GET して TS を読む。503 は使用中 (409)、404 は同期しなかった ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1)) |
 | `channelFormat` | チャンネル名の直し方。`recpt1`・`recisdb`・`px4rec`・`denpa` (そのまま) のどれか ([6.2](#62-チャンネル名の直し方))                                                                   |
 | `lnbArg`        | `lnb` の設定 (`15v`・`11v`・空) ごとの引数。無ければ `{lnb}` は消える                                                                                                              |
 | `receivers`     | 1 つだけ書く。`types` がその機材の `receivable`                                                                                                                                    |
@@ -406,7 +407,7 @@ Sony nasne の `nasne-recpt1` のように、「1 回の起動で 1 つの局 (�
 
 **`busyExitCode`**
 
-コマンドが「チューナー使用中」を表す終了コード (nasne-recpt1 は 3)。この終了コードで終わったときは「同期しなかった」とせず、409 `<種別> のチューナーに空きがありません` で返し、そのチューナーを組の後ろにも回さない。
+コマンドが「チューナー使用中」を表す終了コード (nasne-recpt1 は 3)。この終了コードで終わったときは「同期しなかった」とせず、409 `<種別> のチューナーに空きがありません` で返し、そのチューナーを組の後ろにも回さない。`url` の機種では使わない (書くと断る)。HTTP のステータスで決まる ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。
 
 ### 6.5 Sony nasne (SonyNasne-debian の `nasne-recpt1`)
 
@@ -424,18 +425,17 @@ Sony nasne の `nasne-recpt1` のように、「1 回の起動で 1 つの局 (�
 
 #### 置き方 A: エージェントは別の機械に置き、nasne を HTTP で呼ぶ (勧める)
 
-denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェントを動かし、`cmd` バックエンドで `curl` を起動します。**エージェントを nasne に足さない**ので、MIPS のビルドもカーネルの制限も、TLS の暗号の負荷も nasne には関わりません (nasne 側で動かすのは、今までどおり `nasne-recpt1 --listen 8301` の HTTP だけ)。nasne とエージェントの間は平文の HTTP で、TLS になるのはエージェントと denpa の間です。**負荷の面からも、こちらを勧めます** (置き方 B の負荷は下)。
+denpa のある機械 (か、同じ LAN の Linux・macOS・Windows) でエージェントを動かし、`cmd` バックエンドの `url` (エージェントが HTTP で直接読む。`curl` は使わない) で nasne を呼びます。**エージェントを nasne に足さない**ので、MIPS のビルドもカーネルの制限も、TLS の暗号の負荷も nasne には関わりません (nasne 側で動かすのは、今までどおり `nasne-recpt1 --listen 8301` の HTTP だけ)。nasne とエージェントの間は平文の HTTP で、TLS になるのはエージェントと denpa の間です。**負荷の面からも、こちらを勧めます** (置き方 B の負荷は下)。
 
 組み込みの機種表に `Sony nasne (nasne-recpt1 HTTP)` があります。`devices.json` に書く必要はありません。組み込みの定義は次のとおりです。
 
 ```json
 {
   "model": "Sony nasne (nasne-recpt1 HTTP)",
-  "command": ["curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"],
+  "url": "http://{device}:8301/tuner/{channel}{sidQuery}",
   "channelFormat": "recpt1",
   "singleService": true,
   "decryptedByDevice": true,
-  "busyExitCode": 22,
   "receivers": [{ "index": 0, "types": ["GR", "BS", "CS"] }],
   "lnb": [],
   "cardReader": false
@@ -443,10 +443,9 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 ```
 
 - `tuners.json` は `{"name": "nasne", "types": ["GR", "BS", "CS"], "device": "cmd:Sony nasne (nasne-recpt1 HTTP):nasne.local"}` の 1 台 (既定の 1 系統)。nasne 側を `--dual-tuner` で動かすなら、`types` を `["GR"]` と `["BS", "CS"]` に分けた 2 台にする (同じ `device`)
-- `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。ただし `curl -f` は 400 以上のどの HTTP ステータスでも 22 で終わるので、404・500 も使用中 (409) に見える。区別は今はできない ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
-- 衛星の `:TSID` は、この設定例では渡せない。上の `command` に `tsidArg` が無いので、**`:TSID` 付きの選局 (`BS15:16625` など) は 400 で断られる** (6.2 の制限と同じ)。`:TSID` 無しの `BS15` は `BS15_0` になる (`channelFormat: recpt1` は衛星を常に `_0` にする。スロット番号を付けた `BS15_1` などは、この経路では選べない)。nasne の HTTP に `--tsid` に当たる指定 (`tsid=`) があるかは、版によるかもしれず、実機の版では未確認 ([20](#20-決めていないこと確かめること))。あると分かれば、`tsidArg` を足して渡せる
-- 選局の切り替えは curl を殺して起動し直す。nasne 側はロックを 4 秒待つので、連続の切り替えでは `busyExitCode` が返ることがある (409 で denpa が掛け直す)
-- Docker のイメージには `curl` が無いので、この組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
+- `url` の機種は、HTTP のステータスで失敗を分ける ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。**503 は使用中 (409 `<種別> のチューナーに空きがありません`)、404 は同期しなかった (電波なし・サービスなし。放送休止の判定に使う文言)、200 は TS を流す。繋がらない・ほかのステータス (500 など。B-CAS が挿さっていない nasne の `ACTIVATE失敗` など) は、使用中でも同期しなかったでもない失敗 (500) で、`機材が HTTP <ステータス> を返しました` と理由を返す。** 200 でないときは、ステータスに関わらず (503・404 も)、本文の先頭 200 バイトを記録に出す (本文は 2 秒までしか待たず、終わらない本文でもステータスでの分類は遅れない)。200 で本文が空のまま閉じたときは、同期しなかったとして、別のチューナーで選局し直せる。TS は本文として直接読むので、`curl` は要らない (Windows や Docker のイメージでも動く)。リダイレクトは追わず、環境のプロキシも使わない。選局のたびに新しく繋ぎ、前の接続は切る。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る。`url` は `http://` だけで、`{device}` が入る url の機種は、device の末尾をホスト名か IPv4 に限る (6.1 の `command` と同じ)。`command` と `url` と、`url` と `serviceArg`・`tsidArg`・`busyExitCode` は同時に書けない
+- 衛星の `:TSID` は、この設定例では渡せない。`url` の機種には `tsidArg` を書けないので、**`:TSID` 付きの選局 (`BS15:16625` など) は 400 で断られる** (6.2 の制限と同じ)。`:TSID` 無しの `BS15` は `BS15_0` になる (`channelFormat: recpt1` は衛星を常に `_0` にする。スロット番号を付けた `BS15_1` などは、この経路では選べない)。nasne の HTTP に `--tsid` に当たる指定 (`tsid=`) があるかは、版によるかもしれず、実機の版では未確認 ([20](#20-決めていないこと確かめること))。あると分かれば、`tsidArg` を足して渡せる
+- 選局の切り替えは前の接続を切って、新しく繋ぎ直す。nasne 側はロックを 4 秒待つので、連続の切り替えでは 503 (使用中、409) が返ることがある (denpa が掛け直す)
 - nasne 側の `/status` と `nasne-waked` (予約の 5 分前に起こす) は使わない。電源を落とす運用は denpa とは合わない (録画の時刻を nasne が知らない) ので、nasne は常時起動にする
 
 #### 置き方 B: エージェントを nasne の上で動かす
@@ -455,7 +454,7 @@ denpa 本体は nasne では動かない (bun の mipsel は無い) ので、動
 
 - ビルドは `GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0`。74Kc は FPU を持たないので `softfloat` が要る。静的なバイナリ 1 つを `/usr/local/sbin/denpa-px4-agent` に置き、sysvinit のスクリプトで起動する
 - **公式の 2.6.29 のカーネルでも動く** (実機の nasne、Debian 7、`2.6.29-ts-mipsisa32r2el` で、Go 1.27 のバイナリが起動し、TLS・API・コマンドの起動まで通った)。Go が動作を保証する下限 (2.6.32) より古いが、足りないシステムコールは `accept4` だけだった (MIPS では 2.6.32 で入った)。Go の標準ライブラリは `accept4` しか使わず `accept4: function not implemented` で待ち受けられないので、**最初の `Accept` が `ENOSYS` で失敗したら、待ち受けの fd の複製を blocking のまま `accept(2)` で待つ代替に切り替える** (`internal/app/listen_linux.go`)。`syscall.Accept` も中で `accept4` を呼ぶので、`SYS_ACCEPT` を直に呼ぶ。6.12 のカーネルは要らない
-- 機材の定義は A の `command` を `["/usr/local/sbin/nasne-recpt1", "{channel}", "-", "-"]`、`serviceArg` を `["--sid", "{service}"]`、`busyExitCode` を 3 に替える。衛星の `:TSID` は `["--tsid", "{tsid}"]` で渡せる (`{tsid}` は `:TSID` の値。無ければ空。`tsidArg` として `serviceArg` と同じ形で足す)。`--dual-tuner` を使うなら `command` に足し、`tuners.json` を 2 台にする
+- 機材の定義は、`devices.json` に **`url` ではなく `command`** で書く (`url` と `command` は同時に書けない。組み込みの A の定義 `Sony nasne (nasne-recpt1 HTTP)` は `url` なので、別の機種名で新しく書く)。`command` は `["/usr/local/sbin/nasne-recpt1", "{channel}", "-", "-"]`、`serviceArg` は `["--sid", "{service}"]`、`busyExitCode` は 3。完全な定義は `{"model": "nasne local", "command": ["/usr/local/sbin/nasne-recpt1", "{channel}", "-", "-"], "channelFormat": "recpt1", "serviceArg": ["--sid", "{service}"], "busyExitCode": 3, "singleService": true, "decryptedByDevice": true, "receivers": [{"index": 0, "types": ["GR", "BS", "CS"]}], "lnb": []}` で、`tuners.json` の `device` は `cmd:nasne local:` (デバイスの部分は使わないので空)。衛星の `:TSID` は `["--tsid", "{tsid}"]` で渡せる (`{tsid}` は `:TSID` の値。無ければ空。`tsidArg` として `serviceArg` と同じ形で足す)。`--dual-tuner` を使うなら `command` に足し、`tuners.json` を 2 台にする
 - `nasne-recpt1 --listen 8301` を同時に動かしてもよい (同じロックを使うので取り合いは成り立つ)
 - 置き場: `TUNERS_FILE` などは `/var/lib/denpa-px4-agent/`。`RAW_DIR` は使わない (録画は denpa の側に置かれる)
 - **負荷 (実機の nasne で測った。仕様の見込みは当たらなかった)。** nasne は 1 コア・1 スレッドで、74Kc には AES の命令も ChaCha20 の最適化も無い。TLS (ChaCha20-Poly1305) は純 Go の実装になる。結果は次のとおりで、試験ごとに条件が違うので混ぜない。
@@ -956,7 +955,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 ### Linux
 
 - Docker イメージは `gcr.io/distroless/static` に置く。`USER` は root のまま (デバイスファイルのグループが `video` で、コンテナの中のユーザーに合わせられないため。要れば `--group-add video` で変える)
-- Docker のイメージには `curl` が無いので、nasne (HTTP) の組み込みは使えない。`curl` に頼らない `http` バックエンドで解く ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
+- nasne (HTTP) の組み込みは、`curl` を使わずエージェントが HTTP で直接読むので、Docker のイメージでも使える (6.5。[#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))
 - denpa の `compose.override.yml` で `tuner-agent` を差し替える。px4_drv のメジャー番号は動的なので、`device_cgroup_rules` は `c *:* rmw` にし、`/dev` をディレクトリごと渡す。`/sys` は読み取りで渡す (機材の見分けに使う)
 - pcscd は、ホストの socket (`/run/pcscd`) を渡すか、コンテナの中で動かす。px4_drv の README「Docker 環境からカードリーダーにアクセスする場合」に従う。両方で動かすと競合する
 

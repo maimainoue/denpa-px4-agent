@@ -1,6 +1,7 @@
 package cmdbackend
 
 import (
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -51,8 +52,23 @@ func BuildArgs(def *devices.Def, p Params) []string {
 		"{lnb}", strings.Join(lnbArgs, " "),
 	)
 
+	template := def.Command
+	if def.IsHTTP() {
+		// 展開した URL が 1 要素で返る。URL の中に入る値は、空白などを %20 にする (px4rec の `T 27` が要求行を壊さないように)。
+		// {sidQuery} の `?sid=` は URL の構造なので、そのまま。{device} は checkDeviceHost でホスト名に限っている
+		template = []string{def.URL}
+		repl = strings.NewReplacer(
+			"{device}", url.PathEscape(p.Device),
+			"{type}", url.PathEscape(p.Type),
+			"{service}", service,
+			"{sidQuery}", sidQuery,
+			"{tsid}", tsid,
+			"{channel}", url.PathEscape(strings.Join(p.Channel, " ")),
+			"{lnb}", "",
+		)
+	}
 	var out []string
-	for _, a := range def.Command {
+	for _, a := range template {
 		switch a {
 		case "{channel}":
 			out = append(out, p.Channel...)
