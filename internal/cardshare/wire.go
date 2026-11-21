@@ -38,6 +38,13 @@ func ReadUpTo(body io.Reader, limit int) ([]byte, error) {
 		n += got
 		if err != nil {
 			if err == io.EOF {
+				// バッファ (limit+1 バイト) がちょうど埋まって EOF なら、
+				// 本文は limit+1 バイト以上あるので、上限を超えています。
+				// 1 回の Read で最後のバイトと EOF が一緒に返ることがあるため、
+				// ここで確かめないと、ちょうど limit+1 バイトの本文が有効になってしまいます。
+				if n == len(buf) {
+					return nil, ErrTooLarge
+				}
 				return buf[:n], nil
 			}
 			return nil, err

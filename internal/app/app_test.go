@@ -80,7 +80,9 @@ func start(t *testing.T) *harness {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() { a.Serve(ctx, ln); close(done) }()
-	a.Start(ctx)
+	if err := a.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
 	t.Cleanup(func() { cancel(); <-done })
 
 	// クライアント証明書

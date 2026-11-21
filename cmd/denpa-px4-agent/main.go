@@ -75,7 +75,10 @@ func run(args []string) int {
 	if !a.ID.HasClients() {
 		log.Console("denpa と組むときの URL: %s", a.PairURL())
 	}
-	a.Start(ctx)
+	if err := a.Start(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	if err := a.Serve(ctx, ln); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
