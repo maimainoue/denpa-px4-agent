@@ -87,3 +87,25 @@ func (c Channel) Values() Values {
 	}
 	return v
 }
+
+// ShiftedFreqKHz は SKY でずらした周波数を持つチャンネルの、ずらした周波数 (仕様書 7.2)。
+// ずらす量はチャンネルごとに違う。H11〜H12 は +1000 kHz、H26〜H28 は +4000 kHz、H44 は +2200 kHz。
+// 出どころは px4_drv の docs/isdbc_tuning.md (Digital Devices の表と BonDriver_BDA による)。
+// 地域によって、ずれた周波数で送られている場合がある。対象以外は 0。
+func (c Channel) ShiftedFreqKHz() uint32 {
+	if c.Prefix != "H" {
+		return 0
+	}
+	var shift uint32
+	switch c.Number {
+	case 11, 12:
+		shift = 1000
+	case 26, 27, 28:
+		shift = 4000
+	case 44:
+		shift = 2200
+	default:
+		return 0
+	}
+	return c.Values().FreqKHz + shift
+}
