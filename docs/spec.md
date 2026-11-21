@@ -909,6 +909,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 | `DRIVER_HOST_PATH`                                                            | 実行ファイルの隣の `DriverHost_PX4.exe`                        | Windows で DriverHost_PX4 を起動するときのパス                                                     |
 | `DRIVER_HOST_INI`                                                             | `DRIVER_HOST_PATH` の隣の `DriverHost_PX4.ini`                 | Windows と macOS で、機材の定義 (`DeviceInterfaceGUID`・`VendorId`・`ProductId`・受信機) を読む元   |
 | `FAKE_TUNE`                                                                   | (空)                                                           | 偽の選局 (適合テスト)。`cmd` バックエンドの組み込みの機種 `fake` として扱う ([6.3](#63-選局の流れ)、[17](#17-テスト)) |
+| `FAKE_CARD`                                                                   | (空)                                                           | 試験カード。`1` のときだけ、APDU に固定の答えを返す試験カード (リーダー名 `fake`) を使います。`-tags fakecard` で組んだときだけ有効です。起動ログと `GET /denpa/card` には `fake` と出ます。本物のカードと間違えないこと ([9.1](#91-カードリーダー)、[17](#17-テスト)) |
 
 読めない値は既定に戻さず、理由を出して終了コード 2 で止まります。
 
@@ -1033,6 +1034,7 @@ services:
 - MULTI2 の既知の入出力 (ARIB STD-B25 の試験ベクタ) と、デスクランブラに PMT 2 つ・ES ごとの CA・ECM の変化・アダプテーション・ゴミを混ぜた TS を通した結果 (libaribb25 と一致させる)
 - EMM の組み立てとカード ID の照合
 - 鍵を配る API の wire の往復
+- 試験カード (`FAKE_CARD=1` + `-tags fakecard`。APDU に固定の答えを返す `fake` リーダー。鍵を配る API の往復と、TS から来た EMM が配る側の試験カードに届くことを、実機のカード無しで確かめる)
 - 組む手順の proof
 - `PUT /denpa/channels` の入れ替え
 - pcscd のクライアント (偽の socket) とカードのパイプのクライアント (偽のサーバ)
