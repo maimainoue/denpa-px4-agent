@@ -333,8 +333,8 @@ type firstResult struct {
 }
 
 type session struct {
-	cmd   *exec.Cmd          // HTTP のときは nil
-	r     *os.File           // 子の標準出力 (HTTP のときは、本文を流すパイプ)
+	cmd   *exec.Cmd // HTTP のときは nil
+	r     *os.File  // 子の標準出力 (HTTP のときは、本文を流すパイプ)
 	grace time.Duration
 
 	// HTTP のとき (startHTTPSession)。done を閉じる前に書く。

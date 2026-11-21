@@ -34,9 +34,9 @@ func TestValidate_urlの書き損じ(t *testing.T) {
 		edit func(*Def)
 		want string
 	}{
-		"commandと同時":  {func(d *Def) { d.Command = []string{"curl"} }, "同時に書けません"},
+		"commandと同時":   {func(d *Def) { d.Command = []string{"curl"} }, "同時に書けません"},
 		"httpsは受けない":   {func(d *Def) { d.URL = "https://{device}/x" }, "http:// で始めます"},
-		"スキームだけ":      {func(d *Def) { d.URL = "http://" }, "http:// で始めます"},
+		"スキームだけ":       {func(d *Def) { d.URL = "http://" }, "http:// で始めます"},
 		"serviceArg":   {func(d *Def) { d.ServiceArg = []string{"--sid", "{service}"} }, "使いません"},
 		"tsidArg":      {func(d *Def) { d.TsidArg = []string{"--tsid", "{tsid}"} }, "使いません"},
 		"busyExitCode": {func(d *Def) { d.BusyExitCode = &code }, "使いません"},

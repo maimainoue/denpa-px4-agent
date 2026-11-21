@@ -46,7 +46,7 @@ type Def struct {
 	PairBySerial bool  `json:"pairBySerial,omitempty"`
 
 	// cmd バックエンド (6.1)
-	Command       []string            `json:"command,omitempty"`
+	Command []string `json:"command,omitempty"`
 	// URL は curl を使わずに、エージェントが HTTP の GET で TS を直接読む機種 (6.5)。command とは同時に書けない。
 	// {device}・{channel}・{sidQuery} などは command と同じに展開する。503 は使用中 (409)、404 は同期しなかった。
 	URL           string              `json:"url,omitempty"`
