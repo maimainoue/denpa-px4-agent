@@ -269,6 +269,9 @@ func TestHTTP_組み込みのnasneの2機種を取り違えない(t *testing.T) 
 		}
 		if def.URL != want || host != "192.168.0.43" {
 			t.Errorf("%s: url=%q host=%q", dev, def.URL, host)
+		}
+	}
+}
 
 func TestHTTP_200で本文が空のまま閉じたら同期しなかった(t *testing.T) {
 	tn, _ := newHTTPTestTuner(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
