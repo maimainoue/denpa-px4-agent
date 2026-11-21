@@ -239,6 +239,31 @@ func (m *Manager) dropLocked(why string) {
 	}
 }
 
+// fakeCardProvider は試験カードの Provider かどうかです。
+// 試験カード (FAKE_CARD=1) は、登録の順に関わらず先に試し、先に並べます。
+// 登録の順は init の順 (ファイル名の順) に頼っているので、Manager の側で決めを持ちます。
+type fakeCardProvider interface {
+	IsFakeCard() bool
+}
+
+func isFakeCardProvider(p Provider) bool {
+	f, ok := p.(fakeCardProvider)
+	return ok && f.IsFakeCard()
+}
+
+// fakeFirstProviders は Provider を、試験カードが先になるように並べます。
+func (m *Manager) fakeFirstProviders() []Provider {
+	var fake, rest []Provider
+	for _, p := range m.providers {
+		if isFakeCardProvider(p) {
+			fake = append(fake, p)
+		} else {
+			rest = append(rest, p)
+		}
+	}
+	return append(fake, rest...)
+}
+
 // ensureLocked はカードを開く。見つかったリーダーを内蔵 → 外付けの順に試し、
 // カードが挿さっていて INT に応答した最初の 1 つで開く (9.1)。opMu を持って呼ぶ。
 func (m *Manager) ensureLocked() error {
@@ -260,7 +285,7 @@ func (m *Manager) ensureLocked() error {
 		r ReaderInfo
 	}
 	var listErr []string
-	for _, p := range m.providers {
+	for _, p := range m.fakeFirstProviders() {
 		rs, err := p.List()
 		if err != nil {
 			listErr = append(listErr, err.Error())
@@ -724,7 +749,7 @@ func (m *Manager) status() map[string]any {
 	readers := []map[string]any{}
 	var listMsg string
 	seen := map[string]bool{}
-	for _, p := range m.providers {
+	for _, p := range m.fakeFirstProviders() {
 		rs, err := p.List()
 		if err != nil {
 			listMsg = err.Error()

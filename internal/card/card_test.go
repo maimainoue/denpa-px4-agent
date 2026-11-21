@@ -93,9 +93,13 @@ type fakeProvider struct {
 	err     error
 	links   map[string]*fakeLink
 	openErr map[string]error
+	isFake  bool
 }
 
 func (p *fakeProvider) List() ([]ReaderInfo, error) { return p.readers, p.err }
+
+// IsFakeCard は試験カードのふりをするかどうかです。Manager の fake-first の決めのテスト用です。
+func (p *fakeProvider) IsFakeCard() bool { return p.isFake }
 func (p *fakeProvider) Open(name string) (Link, error) {
 	if e := p.openErr[name]; e != nil {
 		return nil, e
@@ -248,6 +252,49 @@ func TestEnsure_内蔵を先に_カードの無いリーダーは飛ばす(t *te
 	}
 	if ext.count(0x30) != 0 {
 		t.Errorf("先に見つかった内蔵で開けたら外付けには触らない")
+	}
+}
+
+// TestEnsure_試験カードは登録の順に関わらず先に試す は、
+// FAKE_CARD=1 の試験カードが、登録の順 (init の順) に関わらず先に試され、
+// /denpa/card でも先に並ぶことを確かめます。
+func TestEnsure_試験カードは登録の順に関わらず先に試す(t *testing.T) {
+	real := &fakeLink{}
+	fake := &fakeLink{}
+	m := New([]Provider{
+		&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": real}},
+		&fakeProvider{isFake: true, readers: []ReaderInfo{{Name: "fake", Internal: true}}, links: map[string]*fakeLink{"fake": fake}},
+	}, nil, nil, Hooks{})
+	if _, err := m.Info(); err != nil {
+		t.Fatal(err)
+	}
+	if m.cur.Name != "fake" {
+		t.Fatalf("試験カードが先に選ばれません: %s", m.cur.Name)
+	}
+	if fake.count(0x30) != 1 || real.count(0x30) != 0 {
+		t.Fatalf("INT の送り先が違います (fake %d, A %d)", fake.count(0x30), real.count(0x30))
+	}
+	st := m.Status(context.Background())
+	readers, _ := st["readers"].([]map[string]any)
+	if len(readers) == 0 || readers[0]["name"] != "fake" {
+		t.Fatalf("/denpa/card で fake が先頭に並びません: %+v", st)
+	}
+}
+
+// TestEnsure_試験カードでなければ登録の順のまま は、
+// IsFakeCard が false の Provider では、登録の順が変わらないことを確かめます。
+func TestEnsure_試験カードでなければ登録の順のまま(t *testing.T) {
+	a := &fakeLink{}
+	b := &fakeLink{}
+	m := New([]Provider{
+		&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": a}},
+		&fakeProvider{readers: []ReaderInfo{{Name: "B", Internal: true}}, links: map[string]*fakeLink{"B": b}},
+	}, nil, nil, Hooks{})
+	if _, err := m.Info(); err != nil {
+		t.Fatal(err)
+	}
+	if m.cur.Name != "A" {
+		t.Fatalf("先に登録したリーダーが選ばれません: %s", m.cur.Name)
 	}
 }
 
