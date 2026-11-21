@@ -5,6 +5,8 @@ package cmdbackend
 
 import (
 	"errors"
+	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -74,6 +76,9 @@ func (b *Backend) Open(spec backend.TunerSpec) (backend.Tuner, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := checkDeviceHost(def, device); err != nil {
+		return nil, backend.BadRequest("%s: %s", spec.Name, err.Error())
+	}
 	return newTuner(b, spec, def, device), nil
 }
 
@@ -88,8 +93,38 @@ func (b *Backend) Handles(spec backend.TunerSpec) bool {
 // Validate は `PUT /denpa/tuners` で受ける cmd: の device の検査。
 // `<model>` は機材の定義にある command 付きの機種に限る (10.4)。
 func (b *Backend) Validate(device string) error {
-	if _, _, err := b.resolve(backend.TunerSpec{Device: device}); err != nil {
+	def, dev, err := b.resolve(backend.TunerSpec{Device: device})
+	if err != nil {
 		return errors.New("cmd: の機種が機材の定義にありません (command のある機種だけ使えます)")
+	}
+	return checkDeviceHost(def, dev)
+}
+
+// hostRe はホスト名 (RFC 1123) の形。IPv4 もこの形に収まる。
+var hostRe = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$`)
+
+// validHost はホスト名か IPv4 か。長さは 253 まで。
+// 末尾の点 1 個 (nasne.example.com. のような絶対ドメイン名) は除いて調べます。
+// コマンドに渡す元の値は、そのままにします。
+func validHost(s string) bool {
+	s = strings.TrimSuffix(s, ".")
+	return len(s) > 0 && len(s) <= 253 && hostRe.MatchString(s)
+}
+
+// checkDeviceHost は、command・serviceArg・tsidArg の引数の一部に {device} が入っている機種で、
+// device の末尾がホスト名か IPv4 かを確かめる。{device} が URL の途中に入るので、
+// `/`・`#`・`?`・`@`・`:`・空白が入ると、接続先のホスト・ポート・パスを変えられてしまう。
+// {device} だけの要素は別の引数として渡るので、検証しない。
+func checkDeviceHost(def *devices.Def, device string) error {
+	for _, args := range [][]string{def.Command, def.ServiceArg, def.TsidArg} {
+		for _, a := range args {
+			if a != "{device}" && strings.Contains(a, "{device}") {
+				if !validHost(device) {
+					return fmt.Errorf("device の末尾はホスト名か IPv4 だけにします (%s)", device)
+				}
+				return nil
+			}
+		}
 	}
 	return nil
 }

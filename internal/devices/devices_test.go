@@ -149,3 +149,34 @@ func TestLoadFile_busyExitCodeは0も書ける(t *testing.T) {
 		t.Fatalf("%+v", got)
 	}
 }
+
+func TestBuiltin_nasneはHTTPで呼ぶ(t *testing.T) {
+	d, ok := Builtin().Get("Sony nasne (nasne-recpt1 HTTP)")
+	if !ok {
+		t.Fatal("組み込みに nasne が無い")
+	}
+	if !d.IsCmd() || d.ChannelFormat != FormatRecpt1 || !d.SingleService || !d.DecryptedByDevice {
+		t.Errorf("nasne の定義: %+v", d)
+	}
+	wantCmd := []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"}
+	if len(d.Command) != len(wantCmd) {
+		t.Fatalf("command: %v", d.Command)
+	}
+	for i := range wantCmd {
+		if d.Command[i] != wantCmd[i] {
+			t.Errorf("command[%d]: %q (want %q)", i, d.Command[i], wantCmd[i])
+		}
+	}
+	if d.BusyExitCode == nil || *d.BusyExitCode != 22 {
+		t.Errorf("busyExitCode: %v (want 22)", d.BusyExitCode)
+	}
+	if got := d.Receivable(); len(got) != 3 || got[0] != "GR" || got[1] != "BS" || got[2] != "CS" {
+		t.Errorf("receivable: %v", got)
+	}
+	if d.LNB == nil || len(d.LNB) != 0 {
+		t.Errorf("lnb: %v (空で給電できないはず)", d.LNB)
+	}
+	if d.SupportsLnb(15) {
+		t.Error("15V は出せないはず")
+	}
+}
