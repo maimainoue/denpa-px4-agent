@@ -35,12 +35,22 @@ type Server struct {
 	local  LocalCard
 	logf   func(format string, args ...any)
 
+	// 待ち受けのタイムアウト。New が既定値 (読み 15 秒・書き 10 秒・遊び 60 秒) を入れます。
+	// 貰う側は応答を 10 秒まで待つので、読みはそれより少し長くしています。
+	// テストでは短くして上書きします。
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+	idleTimeout  time.Duration
+
 	mu      sync.Mutex
 	refused map[string]time.Time // 断った記録 (相手+理由 → 最後に出した時刻)。10 分に 1 回だけ出します。
 	srv     *http.Server
 	ln      net.Listener
 	closed  bool
 }
+
+// refused の記録の上限 (件)。超えたら古いものから捨てます。放っておくと増え続けます。
+const maxRefused = 1024
 
 // New は鍵を配るサーバを作ります。nets は config.ParseShareNetworks の結果です。
 func New(port int, nets []*net.IPNet, local LocalCard, logf func(format string, args ...any)) *Server {
@@ -49,6 +59,7 @@ func New(port int, nets []*net.IPNet, local LocalCard, logf func(format string, 
 	}
 	return &Server{
 		port: port, policy: NewPolicy(nets), local: local, logf: logf,
+		readTimeout: 15 * time.Second, writeTimeout: 10 * time.Second, idleTimeout: 60 * time.Second,
 		refused: map[string]time.Time{},
 	}
 }
@@ -69,17 +80,21 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("鍵を配る待ち受けが作れません (%v)", err)
 	}
-	s.mu.Lock()
-	s.ln = ln
-	s.mu.Unlock()
-	s.srv = &http.Server{
+	srv := &http.Server{
 		Handler: s.checkPeer(mux),
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			return context.WithValue(ctx, connKey{}, c)
 		},
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       s.readTimeout,
+		WriteTimeout:      s.writeTimeout,
+		IdleTimeout:       s.idleTimeout,
 	}
-	go func() { _ = s.srv.Serve(ln) }()
+	s.mu.Lock()
+	s.ln = ln
+	s.srv = srv
+	s.mu.Unlock()
+	go func() { _ = srv.Serve(ln) }()
 	s.logf("鍵を配ります (ポート %d)", s.port)
 	return nil
 }
@@ -132,12 +147,29 @@ func (s *Server) checkPeer(next http.Handler) http.Handler {
 }
 
 // logRefused は断ったことを記録に残します。同じ相手を同じ理由で断ったものは 10 分に 1 回です。
+// 10 分以上前の記録は捨て、件数が上限 (maxRefused) を超えたら古いものから捨てます。
+// 掃除がないと、異なる相手を断り続けるだけで記録が増え続けます。
 func (s *Server) logRefused(peer, rule, reason string) {
 	key := peer + "/" + rule
 	s.mu.Lock()
+	now := time.Now()
+	oldestKey := ""
+	var oldest time.Time
+	for k, last := range s.refused {
+		if now.Sub(last) >= 10*time.Minute {
+			delete(s.refused, k)
+			continue
+		}
+		if oldestKey == "" || last.Before(oldest) {
+			oldestKey, oldest = k, last
+		}
+	}
 	last, ok := s.refused[key]
-	if !ok || time.Since(last) >= 10*time.Minute {
-		s.refused[key] = time.Now()
+	if !ok || now.Sub(last) >= 10*time.Minute {
+		if !ok && len(s.refused) >= maxRefused {
+			delete(s.refused, oldestKey)
+		}
+		s.refused[key] = now
 		s.mu.Unlock()
 		s.logf("鍵を配るのを断りました: %s (%s) %s", peer, rule, reason)
 		return
@@ -166,7 +198,7 @@ func (s *Server) handleECM(w http.ResponseWriter, r *http.Request) {
 	body, err := ReadUpTo(r.Body, MaxECM)
 	if err != nil {
 		if errors.Is(err, ErrTooLarge) {
-			writeJSONError(w, http.StatusRequestEntityTooLarge, "ECM が大きすぎます (255 バイトまで)")
+			writeJSONError(w, http.StatusBadRequest, "ECM が大きすぎます (255 バイトまで)")
 		} else {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 		}
@@ -192,7 +224,7 @@ func (s *Server) handleConfirm(w http.ResponseWriter, r *http.Request) {
 	body, err := ReadUpTo(r.Body, 2+MaxVerification)
 	if err != nil {
 		if errors.Is(err, ErrTooLarge) {
-			writeJSONError(w, http.StatusRequestEntityTooLarge, "契約確認データが大きすぎます (253 バイトまで)")
+			writeJSONError(w, http.StatusBadRequest, "契約確認データが大きすぎます (253 バイトまで)")
 		} else {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 		}
@@ -224,7 +256,7 @@ func (s *Server) handleEMM(w http.ResponseWriter, r *http.Request) {
 	body, err := ReadUpTo(r.Body, 255)
 	if err != nil {
 		if errors.Is(err, ErrTooLarge) {
-			writeJSONError(w, http.StatusRequestEntityTooLarge, "EMM が大きすぎます (255 バイトまで)")
+			writeJSONError(w, http.StatusBadRequest, "EMM が大きすぎます (255 バイトまで)")
 		} else {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
 		}
