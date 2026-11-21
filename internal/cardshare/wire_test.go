@@ -3,6 +3,7 @@ package cardshare
 import (
 	"bytes"
 	"errors"
+	"io"
 	"slices"
 	"testing"
 
@@ -114,4 +115,28 @@ func TestReadUpTo(t *testing.T) {
 	if !errors.Is(err, ErrTooLarge) || body != nil {
 		t.Fatalf("上限を超えたのに ErrTooLarge になりません: %v, %v", body, err)
 	}
+	// 1 回の Read で最後のバイトと EOF が一緒に返る読み手でも、同じです。
+	// net/http のサーバの本文はこの形になることがあり、256 バイトの ECM が
+	// 200 になってしまったことがあります。
+	body, err = ReadUpTo(eofTogetherReader{bytes.NewReader(make([]byte, 256))}, 255)
+	if !errors.Is(err, ErrTooLarge) || body != nil {
+		t.Fatalf("EOF と一緒に返る 256 バイトが ErrTooLarge になりません: %v, %v", body, err)
+	}
+	// 上限ちょうどなら、EOF と一緒に返っても読めます。
+	body, err = ReadUpTo(eofTogetherReader{bytes.NewReader(make([]byte, 255))}, 255)
+	if err != nil || len(body) != 255 {
+		t.Fatalf("EOF と一緒に返る 255 バイトが読めません: %d バイト, %v", len(body), err)
+	}
+}
+
+// eofTogetherReader は、最後のバイトと一緒に io.EOF を返す読み手です。
+// net/http のサーバの本文は、この形になることがあります。
+type eofTogetherReader struct{ r *bytes.Reader }
+
+func (r eofTogetherReader) Read(p []byte) (int, error) {
+	n, _ := r.r.Read(p)
+	if r.r.Len() == 0 {
+		return n, io.EOF
+	}
+	return n, nil
 }

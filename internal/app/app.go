@@ -18,6 +18,7 @@ import (
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/backend"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/backend/cmdbackend"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/card"
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/cardshare"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/config"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/devices"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/logx"
@@ -70,8 +71,9 @@ type App struct {
 	Defs     *devices.Defs
 	Card     *card.Manager
 
-	env *Env
-	cmd *cmdbackend.Backend
+	env   *Env
+	cmd   *cmdbackend.Backend
+	share *cardshare.Server // CARD_SHARE_PORT を書いたときだけ開く鍵を配るサーバ
 
 	mu           sync.Mutex
 	defined      bool
@@ -134,7 +136,10 @@ func (a *App) openBackend(spec backend.TunerSpec) (backend.Tuner, error) {
 }
 
 // Start は起動のときの定義を読み、検出を始める。
-func (a *App) Start(ctx context.Context) {
+// Start はカードと鍵を配るサーバを起動します。CARD_SHARE_PORT を書いたときだけ、
+// 鍵を配るサーバも開きます。開けなければ起動そのものが失敗します
+// (書いたのに配らない、という黙った失敗にしないためです)。
+func (a *App) Start(ctx context.Context) error {
 	specs, found := a.Tuners.Load(a.Log.Printf)
 	a.mu.Lock()
 	a.defined = found
@@ -149,6 +154,16 @@ func (a *App) Start(ctx context.Context) {
 		a.Log.Printf("CARD_URL は未対応です。手元のカードを使います")
 	}
 	a.Card.Start(ctx)
+	if a.Cfg.CardSharePort != 0 {
+		nets, err := config.ParseShareNetworks(a.Cfg.CardShareNetworks)
+		if err != nil {
+			return fmt.Errorf("CARD_SHARE_NETWORKS が読めません (%v)", err)
+		}
+		a.share = cardshare.New(a.Cfg.CardSharePort, nets, a.Card, wrapListener, a.Log.Printf)
+		if err := a.share.Start(); err != nil {
+			return err
+		}
+	}
 	a.detect()
 	go func() {
 		tk := time.NewTicker(5 * time.Second)
@@ -162,6 +177,7 @@ func (a *App) Start(ctx context.Context) {
 			}
 		}
 	}()
+	return nil
 }
 
 // Redetect は定義を消したあとに自動検出へ戻す。
@@ -270,6 +286,9 @@ func (a *App) shutdown(srv *http.Server) {
 	}
 	a.Hub.CloseAll()
 	a.Mgr.Shutdown()
+	if a.share != nil {
+		_ = a.share.Close()
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	srv.Shutdown(ctx)

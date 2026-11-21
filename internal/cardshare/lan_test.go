@@ -43,3 +43,24 @@ func TestPolicyAllowed(t *testing.T) {
 		}
 	}
 }
+
+// TestAllowedTypedNil は、型つきの nil を渡しても panic しないことを確かめます。
+// (*net.TCPAddr)(nil) は、interface としては nil ではないので、
+// .IP をそのまま読むと panic します。conn.RemoteAddr() がこの形を返すことは
+// 通常ありませんが、「鍵を配ってよいか」の判定で panic しないようにします。
+func TestAllowedTypedNil(t *testing.T) {
+	nets, err := config.ParseShareNetworks(config.DefaultShareNetworks())
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := NewPolicy(nets)
+	for _, addr := range []net.Addr{
+		(*net.TCPAddr)(nil),
+		(*net.UDPAddr)(nil),
+		(*net.IPAddr)(nil),
+	} {
+		if policy.Allowed(addr) {
+			t.Fatalf("%T の nil を配る範囲に入れてしまいました", addr)
+		}
+	}
+}

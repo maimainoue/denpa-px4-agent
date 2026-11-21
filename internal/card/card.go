@@ -440,6 +440,28 @@ func (m *Manager) EMM(payload []byte) {
 	}
 }
 
+// EMMNow は EMM をすぐにカードに送り、返り値を返す。配る側 (/emm) が使う。
+// EMM (順番待ちに入れて 1 秒に 1 件まで送る) とは別で、受け入れの記録や denpa への通知はしない。
+// 返すのはカードの返り値そのもので、0x2100 なら受け入れたことになる。
+// 0x2100 のときは、更新前の応答を控えている ECM も消します (emmLoop と同じ)。
+// denpa の付属のエージェントはこの返り値を見て、受け入れた EMM はもう送らず、
+// 受け入れなかった EMM は次に流れてきたら送り直す (Emm.cs)。キューに入れただけでは 0x2100 を返さない。
+func (m *Manager) EMMNow(payload []byte) (int, error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	resp, err := m.send(0x36, payload, 6)
+	if err != nil {
+		return 0, err
+	}
+	c := int(code(resp))
+	if c == 0x2100 {
+		m.mu.Lock()
+		m.ecm = map[string]ecmEntry{}
+		m.mu.Unlock()
+	}
+	return c, nil
+}
+
 func (m *Manager) emmLoop() {
 	for p := range m.emmQ {
 		h := fnv.New64a()

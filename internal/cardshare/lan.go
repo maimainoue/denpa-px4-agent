@@ -36,13 +36,25 @@ func (p *Policy) Allowed(addr net.Addr) bool {
 
 // addrIP は相手のアドレスから IP だけを取ります。
 // 知らない種類のアドレスは nil (配らない) です。
+// 型つきの nil ((*net.TCPAddr)(nil) など) は、そのまま .IP を読むと panic するので、
+// まず nil かを確かめます。conn.RemoteAddr() がこの形を返すことは通常ありませんが、
+// 「鍵を配ってよいか」の判定で panic しないようにします。
 func addrIP(addr net.Addr) net.IP {
 	switch a := addr.(type) {
 	case *net.TCPAddr:
+		if a == nil {
+			return nil
+		}
 		return a.IP
 	case *net.UDPAddr:
+		if a == nil {
+			return nil
+		}
 		return a.IP
 	case *net.IPAddr:
+		if a == nil {
+			return nil
+		}
 		return a.IP
 	default:
 		return nil

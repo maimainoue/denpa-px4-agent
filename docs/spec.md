@@ -694,7 +694,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 | `POST /denpa/card/confirm`  | MJD (BE16) + verification (1〜253 バイト) | 返り値 (BE16)                                                                   |
 | `POST /denpa/card/emm`      | ペイロード (13〜255 バイト)              | 返り値 (BE16)                                                                   |
 
-失敗は JSON (`{"ok": false, "error": "…"}`) で、本文が長すぎれば 400、範囲の外なら 403 です。
+失敗は JSON (`{"error": "…"}`) で、本文が長すぎれば 400、範囲の外なら 403 です。付属のエージェントの `Respond.Error` と同じ形で、`"ok"` は付けません。貰う側は `"error"` の文字列だけを読みます。
 
 絞り方は 3 つです (値と上限は denpa の `docs/agent.md`「鍵を配るのは LAN の中だけ」と同じ)。
 

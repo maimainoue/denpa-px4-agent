@@ -79,6 +79,15 @@ func (l *fakeLink) count(ins byte) int {
 	return n
 }
 
+// sentCopy は送った APDU の写しです。EMM の goroutine が送っている最中にも読めます。
+func (l *fakeLink) sentCopy() [][]byte {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make([][]byte, len(l.sent))
+	copy(out, l.sent)
+	return out
+}
+
 type fakeProvider struct {
 	readers []ReaderInfo
 	err     error
@@ -142,7 +151,7 @@ func TestACAS_B_CASのINTが断られたらP2を変えて開く(t *testing.T) {
 	}
 	m.EMM([]byte{9, 9})
 	time.Sleep(200 * time.Millisecond)
-	for _, a := range l.sent {
+	for _, a := range l.sentCopy() {
 		if a[1] == 0x34 && a[3] != 2 {
 			t.Errorf("ECM の P2 は 2: % x", a)
 		}
@@ -168,6 +177,29 @@ func TestACAS_B_CASのカードはP2を変えない(t *testing.T) {
 		if a[3] != 0 {
 			t.Errorf("B-CAS なのに P2 が 0 でない: % x", a)
 		}
+	}
+}
+
+// TestEMMNow_受け入れたらECMの控えを消す は、EMM を受け入れた (0x2100) あと、
+// 更新前の応答を控えている ECM が消えることを確かめます。
+func TestEMMNow_受け入れたらECMの控えを消す(t *testing.T) {
+	l := &fakeLink{emmRet: 0x2100}
+	m := New([]Provider{&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": l}}}, nil, nil, Hooks{})
+	ecm := []byte{1, 2, 3}
+	if _, err := m.ECM(ecm); err != nil {
+		t.Fatal(err)
+	}
+	if n := l.count(0x34); n != 1 {
+		t.Fatalf("ECM が %d 回送られました", n)
+	}
+	if code, err := m.EMMNow([]byte{9, 9}); err != nil || code != 0x2100 {
+		t.Fatalf("EMMNow: %d %v", code, err)
+	}
+	if _, err := m.ECM(ecm); err != nil {
+		t.Fatal(err)
+	}
+	if n := l.count(0x34); n != 2 {
+		t.Fatalf("受け入れたあとの ECM が控えのままです (%d 回)", n)
 	}
 }
 
