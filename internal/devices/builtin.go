@@ -86,5 +86,15 @@ func Builtin() *Defs {
 		Receivers: recv(rx("GR", "BS", "CS")),
 		LNB:       []int{},
 	})
+	// 同じ nasne を、B-CAS を使わずに読む (nasne-recpt1 の ?bcas=0。仕様書 6.5)。nasne は B-CAS を見ず、
+	// 復号しない生の TS (全 PID) を出す。復号はエージェントが、自分のカード (か CARD_URL で貰う鍵) で行う。
+	// なので decryptedByDevice は false、生の TS は全部の局を含むので singleService も false
+	// (同じチャンネルの別の局は、同じ選局に相乗りできる)。sid は nasne が無視するので URL に付けない。
+	s.Put(Def{Model: "Sony nasne (nasne-recpt1 HTTP raw)",
+		URL:           "http://{device}:8301/tuner/{channel}?bcas=0",
+		ChannelFormat: FormatRecpt1,
+		Receivers:     recv(rx("GR", "BS", "CS")),
+		LNB:           []int{},
+	})
 	return s
 }
