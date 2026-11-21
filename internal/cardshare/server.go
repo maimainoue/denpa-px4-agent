@@ -11,18 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/denpa-px4-agent/denpa-px4-agent/internal/b25"
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/card"
 )
-
-// LocalCard は配る側が手元のカードに求めるものです。card.Manager が満たします。
-// EMMNow は EMM をすぐに送って返り値を返すもので、順番待ちに入れる EMM とは別です。
-// 配る側は、denpa の付属のエージェントと同じく、カードの返り値そのものを返します。
-type LocalCard interface {
-	Info() (b25.Info, error)
-	ECM(ecm []byte) (b25.ECMResult, error)
-	Confirm(ctx context.Context, verification []byte, mjd int) (int, error)
-	EMMNow(payload []byte) (int, error)
-}
 
 // Server は鍵を配る側です。CARD_SHARE_PORT を書いたときだけ開きます。
 // 平文の HTTP で、鍵を配る API にしか応答しません。AGENT_HOST に関わらず
@@ -32,7 +22,7 @@ type LocalCard interface {
 type Server struct {
 	port   int
 	policy *Policy
-	local  LocalCard
+	local  card.LocalCard
 	// wrap は待ち受けを包む関数です。app は wrapListener (accept4 の無い古いカーネルで
 	// accept に切り替える) を渡します。nil なら、そのまま使います。
 	wrap func(net.Listener) net.Listener
@@ -57,7 +47,7 @@ const maxRefused = 1024
 
 // New は鍵を配るサーバを作ります。nets は config.ParseShareNetworks の結果です。
 // wrap は待ち受けを包む関数で、app は wrapListener を渡します。nil ならそのまま使います。
-func New(port int, nets []*net.IPNet, local LocalCard, wrap func(net.Listener) net.Listener, logf func(format string, args ...any)) *Server {
+func New(port int, nets []*net.IPNet, local card.LocalCard, wrap func(net.Listener) net.Listener, logf func(format string, args ...any)) *Server {
 	if logf == nil {
 		logf = func(format string, args ...any) {}
 	}

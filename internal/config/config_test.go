@@ -2,6 +2,40 @@ package config
 
 import "testing"
 
+func TestValidateCardURL(t *testing.T) {
+	for _, good := range []string{"http://192.168.0.10:25261", "http://nasne.local:25261"} {
+		if err := ValidateCardURL(good); err != nil {
+			t.Errorf("%q を断りました: %v", good, err)
+		}
+	}
+	for _, bad := range []string{"https://192.168.0.10:25261", "192.168.0.10:25261", "http://", ""} {
+		if err := ValidateCardURL(bad); err == nil {
+			t.Errorf("%q を受けました", bad)
+		}
+	}
+}
+
+func TestLoad_CARD_URL(t *testing.T) {
+	load := func(v string) (*Config, error) {
+		return Load(func(k string) string {
+			if k == "CARD_URL" {
+				return v
+			}
+			return ""
+		}, "linux", "/usr/local/sbin/denpa-px4-agent")
+	}
+	c, err := load("")
+	if err != nil || c.CardURL != "" {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if c, err = load("http://192.168.0.10:25261"); err != nil || c.CardURL != "http://192.168.0.10:25261" {
+		t.Errorf("%+v %v", c, err)
+	}
+	if _, err := load("https://192.168.0.10:25261"); err == nil {
+		t.Error("https を受けました")
+	}
+}
+
 func TestLoad_STREAM_QUEUE_BYTES(t *testing.T) {
 	load := func(v string) (*Config, error) {
 		return Load(func(k string) string {
