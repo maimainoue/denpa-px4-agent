@@ -33,9 +33,15 @@ build linux arm64 denpa-px4-agent-linux-arm64 ""
 build windows amd64 denpa-px4-agent.exe ""
 build darwin arm64 denpa-px4-agent-darwin-arm64 ""
 build darwin amd64 denpa-px4-agent-darwin-amd64 ""
-# nasne 向けは試験的です (cmd バックエンドだけで、pcscd と chardev は使いません)。
-# nasne タグで pcscd・chardev の platform を外し、nethttpomithttp2 で HTTP/2 を切ります。
-build linux mipsle denpa-px4-agent-linux-mipsle "nasne,nethttpomithttp2" GOMIPS=softfloat
+# nasne 向け (linux/mipsle) は、ChaCha20-Poly1305 のアセンブリ入りの専用ビルドです (scripts/build-nasne.sh、
+# 仕様書 16 章)。取り込んだアセンブリ (third_party/x-crypto-mipsle) を、専用に複製した GOROOT に当てるので、
+# ほかのターゲットより時間がかかります。TLS の暗号が約 4.5 倍速く、nasne の CPU が約半分になります。
+# **MIPS32r2 以上の機材だけで動きます** (nasne の 74Kc は r2)。試験的です (cmd バックエンドだけで、
+# pcscd と chardev は使いません。nasne・nethttpomithttp2 のタグは、build-nasne.sh が付けます)。
+# バイナリのとなりに、同梱するライセンス (アセンブリの MIT と、Go の BSD) の *.licenses.txt もできます。
+# 配るときは一緒に付けます (下の sha256sums.txt にも入ります)。
+echo "== linux/mipsle (アセンブリ入り) -> denpa-px4-agent-linux-mipsle"
+VERSION="$VERSION" bash scripts/build-nasne.sh "$DIST/denpa-px4-agent-linux-mipsle"
 
 # Windows の zip: 中身は denpa-px4-agent.exe と README です (仕様書 16 章)。
 zip -j -q "$DIST/denpa-px4-agent-windows-amd64.zip" "$DIST/denpa-px4-agent.exe" README.md
