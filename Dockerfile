@@ -2,7 +2,7 @@
 # ビルド: docker buildx build --platform linux/amd64,linux/arm64 \
 #           --build-arg VERSION=v0.1.0 -t ghcr.io/maimainoue/denpa-px4-agent:latest .
 # 実行は denpa の compose.override.yml (deploy/compose.override.yml) を見てください。
-FROM golang:1.25-bookworm AS build
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS build
 ARG TARGETARCH
 ARG VERSION=dev
 WORKDIR /src

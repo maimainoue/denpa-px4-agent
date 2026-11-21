@@ -943,7 +943,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 
 ## 16. 配布
 
-- Go 1.23 以上。Linux と Windows は `CGO_ENABLED=0` で静的にビルド、macOS は cgo あり (PCSC.framework・IOKit)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
+- Go 1.23 以上。`CGO_ENABLED=0` で静的にビルドする (macOS も。今の実装は DriverHost_PX4 への UNIX ドメインソケットだけで、cgo を使わない)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
 - nasne 向けに `linux/mipsle` (`GOMIPS=softfloat`) も出す ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1) の置き方 B)。`cmd` バックエンドだけで、pcscd と chardev は使わない構成なので、リリースの表では「試験的」と書く
 
 ### Linux

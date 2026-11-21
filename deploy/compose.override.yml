@@ -9,6 +9,11 @@ services:
   tuner-agent:
     image: ghcr.io/maimainoue/denpa-px4-agent:latest
     cap_add: !reset []
+    # 注意: `c *:* rmw` と `/dev` の丸ごとの共有は、denpa 本体の compose.yml
+    # (DVB の `c 212:*` と USB の `c 189:*` だけ) より、ずっと広い権限です。
+    # px4_drv のメジャー番号が動的なので、この形にしています。
+    # 狭めるには、`/proc/devices` で `px4video` のメジャー番号を調べて、
+    # `device_cgroup_rules` をその番号だけ (`c <メジャー番号>:* rmw`) にします。
     device_cgroup_rules: !override
       - "c *:* rmw"
     volumes: !override

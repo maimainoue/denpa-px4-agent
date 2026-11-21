@@ -7,6 +7,11 @@ cd "$(dirname "$0")/.."
 
 command -v go >/dev/null || { echo "go がありません (PATH を見てください)" >&2; exit 1; }
 
+# GNU tar・zip・sha256sum・file を使います (実質 Linux 専用)。
+for c in zip tar sha256sum file; do
+	command -v "$c" >/dev/null || { echo "$c がありません (PATH を見てください)" >&2; exit 1; }
+done
+
 VERSION="${VERSION:-dev}"
 DIST=dist
 rm -rf "$DIST"
@@ -53,6 +58,10 @@ echo
 echo "== できました (VERSION=$VERSION)"
 ls -la "$DIST"
 echo
-echo "== この VM で動く linux/amd64 の確認"
-"$DIST/denpa-px4-agent-linux-amd64" --version
+echo "== linux/amd64 の --version の確認"
+if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
+	"$DIST/denpa-px4-agent-linux-amd64" --version
+else
+	echo "(この機械では linux/amd64 を実行できないので、--version の確認はしません)"
+fi
 file "$DIST"/denpa-px4-agent-*

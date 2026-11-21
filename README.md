@@ -48,7 +48,7 @@ GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0   go build -trimpath -ta
 
 ### Docker とリリース
 
-Docker イメージは `ghcr.io/maimainoue/denpa-px4-agent:latest` です。タグ `v*` を push するか、Actions から手動で実行すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして GHCR に出します。手元で作るときは次のとおりです。
+タグ `v*` を push すると、GitHub Actions が linux/amd64 と linux/arm64 をビルドして、GHCR に `ghcr.io/maimainoue/denpa-px4-agent:latest` などを公開します。Actions から手動で実行したときは、`dev-<短い SHA>` のタグで出します。手元で作るときは次のとおりです。
 
 ```sh
 docker buildx build --platform linux/amd64,linux/arm64 \
