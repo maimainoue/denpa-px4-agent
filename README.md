@@ -20,7 +20,7 @@ denpa 付属のエージェントは PLEX・e-Better の IT930x の機材を USB
 
 ## 実装の状態
 
-仕様書 [19](docs/spec.md) の段階 1・2・3・5 を書きました。
+仕様書 [19](docs/spec.md) の段階 1〜5 を書きました。
 
 実機で確かめたのは、**Windows (DriverHost_PX4 経由)** と、**Linux (QEMU の VM。px4_drv の chardev と pcscd 経由の B-CAS)** です。どちらも、上の対象には入っていない機種で確かめました。**対象の機種 (PX-W3U4 など) の実機は、まだ確かめていません。** UHF の選局、再選局の繰り返し、内蔵カードリーダーの B-CAS での復号 (NHK 総合の映像と音声の PES の先頭が全部復号済み) まで通りました。ほかの機種・OS (macOS、Linux のそのほかの機種) は、単体テストだけです。この確認で見つかった不具合 (TS のパイプの繋ぎ直し・同期 I/O・受信の止め方) は仕様書 5.4 に反映しています。
 
@@ -29,6 +29,7 @@ denpa 付属のエージェントは PLEX・e-Better の IT930x の機材を USB
 | 1 骨組み | 環境変数・設定ファイル・機材の定義・記録・TLS と組む手順・API 全部・SSE・取り合い・`cmd` バックエンド | `internal/config`・`store`・`devices`・`logx`・`tlsx`・`api`・`manager`・`backend/cmdbackend`・`app` |
 | 2 Linux の chardev | 機材の検出 (sysfs)・ioctl・`read()`・C/N・抜き差し | `internal/chardev` |
 | 3 カードと復号 | MULTI2・PAT/PMT/CAT/ECM/EMM・カードの管理・`/denpa/card`・`/denpa/decode` | `internal/b25`・`card`・`pcsc` |
+| 4 鍵の共有 | 鍵を配る側 (CardWire 互換の `/denpa/card/init`・`ecm`・`confirm`・`emm`)・貰う側 (`CARD_URL`)・LAN の制限・TTL・往復時間・同時の要求の数 | `internal/cardshare` |
 | 5 host | DriverHost_PX4 のクライアント (制御・TS・カードのパイプ)。Windows の名前付きパイプと macOS の UNIX ドメインソケット | `internal/host` |
 
 ```sh
@@ -75,6 +76,22 @@ VERSION=v0.1.0 bash scripts/build-release.sh
 ```
 
 denpa と一緒に使うときは、`deploy/compose.override.yml` を denpa の `compose.yml` と同じフォルダに置きます。
+
+### 鍵を配る・貰う (カード共有)
+
+カードを挿した機械が、同じ LAN の、カードを持たない機械に、鍵を配れます (denpa の付属のエージェントと同じ CardWire 互換の API。仕様書 [9.5](docs/spec.md))。nasne のようにカードリーダーが無い機械や、`nasne-recpt1 --no-bcas` の生の TS ([仕様書 6.5](docs/spec.md)) を、別の機械のカードで復号するときに使います。
+
+| 環境変数 | 意味 |
+|---|---|
+| `CARD_SHARE_PORT` | 書くと、そのポートで鍵を配る (カードのある側)。書かなければ配らない。`AGENT_PORT` と同じ値は起動を止める |
+| `CARD_URL` | `http://ホスト:ポート` の形で、鍵を配る側 (`CARD_SHARE_PORT` のポート) を書くと、手元のカードではなく、そこから鍵を貰う (カードのない側) |
+| `CARD_SHARE_NETWORKS` | 配る相手のアドレスの範囲 (カンマ区切り)。既定はプライベートアドレスだけ (`127.0.0.0/8`・`10.0.0.0/8`・`172.16.0.0/12`・`192.168.0.0/16` と IPv6 のループバック・ULA・リンクローカル)。既定の範囲の外 (グローバルなど) を書くと起動しない |
+| `CARD_TTL` | 配るとき・貰うときの TTL (IPv6 は hop limit)。既定 1 (ルーターを越えない)、1〜8 |
+| `CARD_SHARE_MAX_RTT` | 往復時間 (ミリ秒) がこれを超える相手には配らない。既定は見ない (0) |
+
+- **平文の HTTP で鍵を配るので、信頼できる LAN の中だけで使ってください。** 範囲・TTL・往復時間・同時の要求の数 (4 まで。超えたら 503) で絞りますが、暗号化も認証もありません
+- `CARD_URL` と `CARD_SHARE_PORT` を両方書くと、配るのは手元のカードだけです (貰った鍵はさらに配らない)
+- 実機で、A-CAS と B-CAS のカードを別の機械から貰い、復号した結果が、手元のカードで復号したものとバイト単位で一致することを確かめました。受け入れられる EMM (契約の更新) の流れは、実機では未確認です
 
 ### 未実装・未確認
 
