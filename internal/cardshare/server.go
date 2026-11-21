@@ -192,7 +192,10 @@ func (l *ttlListener) Accept() (net.Conn, error) {
 	}
 	tc, ok := c.(*net.TCPConn)
 	if !ok {
-		return c, nil
+		// TCP でなければ TTL を付けられないので、切ります。
+		// 付けずに通すと、「付けられなければ切る」という作りと食い違います。
+		_ = c.Close()
+		return nil, tempError{fmt.Errorf("TCP の接続ではありません")}
 	}
 	raw, err := tc.SyscallConn()
 	if err != nil {

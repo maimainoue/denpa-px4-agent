@@ -14,6 +14,8 @@ import (
 // Linux の TCP_INFO の tcpi_rtt (マイクロ秒) を読みます。
 // struct tcp_info の先頭 68 バイトは u8 と u32 だけなので、
 // tcpi_rtt はどの CPU でも offset 68 にあります。
+// 値は CPU のエンディアンで入っているので、NativeEndian で読みます。
+// LittleEndian だと、ビッグエンディアンの Linux (MIPS BE など) で値が逆になります。
 func measureRTT(c syscall.RawConn) (time.Duration, error) {
 	var rtt time.Duration
 	var opErr error
@@ -31,7 +33,7 @@ func measureRTT(c syscall.RawConn) (time.Duration, error) {
 			opErr = fmt.Errorf("TCP_INFO が短すぎます (%d バイト)", length)
 			return
 		}
-		rtt = time.Duration(binary.LittleEndian.Uint32(info[68:72])) * time.Microsecond
+		rtt = time.Duration(binary.NativeEndian.Uint32(info[68:72])) * time.Microsecond
 	})
 	if err != nil {
 		return 0, err

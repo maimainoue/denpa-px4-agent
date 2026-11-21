@@ -25,12 +25,14 @@ var (
 
 // measureRTT は OS が TCP の ACK から測っている往復時間を返します。
 // Windows の SIO_TCP_INFO の TCP_INFO_v0.RttUs (マイクロ秒) を読みます。
+// TCP_INFO_v0 は 88 バイトあるので、出力バッファは 128 バイトにします
+// (64 バイトでは WSAEFAULT で失敗します)。
 func measureRTT(c syscall.RawConn) (time.Duration, error) {
 	var rtt time.Duration
 	var opErr error
 	err := c.Control(func(fd uintptr) {
 		version := uint32(0)
-		var info [64]byte
+		var info [128]byte
 		var returned uint32
 		ret, _, _ := procWSAIoctl.Call(
 			fd,

@@ -1,6 +1,7 @@
 package cardshare
 
 import (
+	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -123,5 +124,48 @@ func TestMeasureRTT(t *testing.T) {
 	}
 	if rtt < 0 || rtt >= time.Second {
 		t.Fatalf("往復時間がおかしいです: %s", rtt)
+	}
+}
+
+// pipeListener は Accept で net.Pipe の接続を返す、TCP でない待ち受けです。
+type pipeListener struct {
+	conn net.Conn
+	done bool
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	if l.done {
+		return nil, fmt.Errorf("closed")
+	}
+	l.done = true
+	return l.conn, nil
+}
+func (l *pipeListener) Close() error { return nil }
+func (l *pipeListener) Addr() net.Addr {
+	return &net.TCPAddr{IP: net.ParseIP("127.0.0.1")}
+}
+
+// TestTTLListenerNonTCP は、TCP でない接続を切ることを確かめます。
+func TestTTLListenerNonTCP(t *testing.T) {
+	server, client := net.Pipe()
+	defer client.Close()
+	wrapped := &ttlListener{Listener: &pipeListener{conn: server}, network: "tcp4", ttl: 1}
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := wrapped.Accept()
+		errCh <- err
+	}()
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("TCP でない接続を通しました")
+		}
+		// 受けた側は閉じられます。書いたものが届かないことを確かめます。
+		_ = client.SetWriteDeadline(time.Now().Add(time.Second))
+		if _, err := client.Write([]byte{0}); err == nil {
+			t.Fatal("切ったはずの接続に書けました")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Accept が返りません")
 	}
 }
