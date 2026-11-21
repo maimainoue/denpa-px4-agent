@@ -66,12 +66,25 @@ if [ -e "$DST_REAL" ] || [ -L "$DST_REAL" ]; then
   echo "複製先がもうある: $DST_REAL" >&2
   exit 1
 fi
-case "$DST_REAL" in
-  "$SRC"|"$SRC"/*)
-    echo "複製先は GOROOT の外に指定してください: $DST" >&2
-    exit 1
-    ;;
-esac
+# inside_of <パス> <ディレクトリ>: <パス> が <ディレクトリ> と同じ実体か、その内側なら真。
+# 文字列でなく実体 (test -ef) で比べる。大文字小文字を区別しない環境 (Windows・macOS) では、同じ実体が別の表記になり、
+# 文字列の比較は抜ける。<パス> が無いときは、最も近い既存の祖先から上へ辿る。
+inside_of() {
+  p=$1
+  while [ ! -e "$p" ] && [ "$(dirname "$p")" != "$p" ]; do
+    p=$(dirname "$p")
+  done
+  while :; do
+    [ "$p" -ef "$2" ] && return 0
+    parent=$(dirname "$p")
+    [ "$parent" = "$p" ] && return 1
+    p=$parent
+  done
+}
+if inside_of "$DST_REAL" "$SRC"; then
+  echo "複製先は GOROOT の外に指定してください: $DST" >&2
+  exit 1
+fi
 # 作成・コピー・権限の変更は、検査したパスと同じものに対して行う (元の文字列には ".." や別の書き方が残りうる)
 DST=$DST_REAL
 
@@ -81,9 +94,17 @@ done
 
 echo "GOROOT を複製: $SRC -> $DST"
 mkdir -p "$DST"
-cp -R "$SRC/." "$DST/"
+# -L: シンボリックリンクを実体として複製する。リンクのまま (cp -R の既定) だと、src などが共有のツリーへのリンクのとき
+# (Debian の golang パッケージなど)、あとの書き込みがリンクをたどって、元の GOROOT を書き換える
+cp -RL "$SRC/." "$DST/"
 chmod -R u+w "$DST"
 V="$DST/src/vendor/golang.org/x/crypto"
+# 書き込む先が複製の内側に解決されることを、書き込む前に確かめる (複製の中に、外へ出るリンクが残っていないか)
+VR=$(CDPATH= cd -P "$V" 2>/dev/null && pwd -P) || { echo "複製の中に $V が無い (GOROOT のバージョンが違う?)" >&2; exit 1; }
+if ! inside_of "$VR" "$DST"; then
+  echo "書き込み先が複製の外に解決されます: $V -> $VR (中止。元の GOROOT は変えていません)" >&2
+  exit 1
+fi
 
 cp "$PR/chacha20/chacha_mipsle.go" "$PR/chacha20/chacha_mipsle.s" "$V/chacha20/"
 cp "$PR/internal/poly1305/sum_mipsle.go" "$PR/internal/poly1305/sum_mipsle.s" "$V/internal/poly1305/"
