@@ -12,8 +12,17 @@ permissions:
   contents: read
 
 jobs:
+  # テストと go vet を、Linux と Windows で回す。OS ごとの処理 (往復時間・TTL・名前付きパイプなど) が、
+  # 片方の OS だけで壊れるのを見つけるため (#27 では、Windows の往復時間だけが失敗していた)。
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -27,3 +36,35 @@ jobs:
         run: go vet -tags fakecard ./...
       - name: go test (試験カード)
         run: go test -tags fakecard ./...
+
+  # 他の OS・CPU でビルドが通ることを確かめる (実行はしない)。
+  # OS ごとのファイル (*_linux.go・*_windows.go・*_other.go など) の書き忘れを見つけるため
+  # (#27 では、freebsd だけビルドが通らなかった)。
+  # linux/mipsle は nasne 向けで、リリースと同じタグ (nasne,nethttpomithttp2) と GOMIPS=softfloat でも組む。
+  build:
+    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: arm64 }
+          - { goos: linux, goarch: mipsle, gomips: softfloat, tags: "nasne,nethttpomithttp2" }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: windows, goarch: amd64 }
+          - { goos: freebsd, goarch: amd64 }
+    env:
+      CGO_ENABLED: "0"
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      GOMIPS: ${{ matrix.gomips }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go build
+        run: go build -tags "${{ matrix.tags }}" ./...
+      - name: go build (試験カード)
+        run: go build -tags fakecard ./...
