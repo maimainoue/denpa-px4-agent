@@ -450,7 +450,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS・Windows) でエー�
 
 #### B-CAS なしで使う: nasne は生の TS を出し、復号はエージェントが行う
 
-`nasne-recpt1` の `--no-bcas` (HTTP は `?bcas=0`。SonyNasne-debian の 2026-11-21 のコミット 4db1494 以降) を付けると、nasne は B-CAS を見ず (ACTIVATE も、機材の中の復号も使わず)、**復号しない生の TS (全 PID)** を出します。`--sid`・`?sid=` は無視されます。B-CAS を挿していない nasne でも選局できます (標準の機種では、B-CAS が無いと 500 `secured stream` になる)。復号は、エージェントが、自分のカードか `CARD_URL` で貰う鍵 ([9.5](#95-鍵を配る貰う)) で行います。対応していない版の `nasne-recpt1` で `bcas=0` がどう扱われるかは、確かめていません。
+`nasne-recpt1` の `--no-bcas` (HTTP は `?bcas=0`) を付けると、**この `--no-bcas` は、[maimainoue/SonyNasne-debian](https://github.com/maimainoue/SonyNasne-debian) の fork にしかありません** (2026-11-21 のコミット 4db1494 以降。上の本家 [mar1mo-41414/SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1` には、まだありません)。nasne は B-CAS を見ず (ACTIVATE も、機材の中の復号も使わず)、**復号しない生の TS (全 PID)** を出します。`--sid`・`?sid=` は無視されます。B-CAS を挿していない nasne でも選局できます (標準の機種では、B-CAS が無いと 500 `secured stream` になる)。復号は、エージェントが、自分のカードか `CARD_URL` で貰う鍵 ([9.5](#95-鍵を配る貰う)) で行います。本家などの対応していない版の `nasne-recpt1` で `bcas=0` がどう扱われるかは、確かめていません。
 
 組み込みの機種表に `Sony nasne (nasne-recpt1 HTTP raw)` があります (`devices.json` は要りません)。
 

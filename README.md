@@ -9,7 +9,7 @@
   - e-Better: DTV02-1T1S-U (実験的)・DTV02A-1T1S-U・DTV02A-4TS-P・DTV02A-5TS-P・DTV03A-1TU (実験的)
   - 機種の定義は `devices.json` で足したり、受けられる種別を変えたりできます (対象外の機種の動作は保証しません)
 - recpt1 互換の CLI (recpt1・recisdb・px4rec) も、`devices.json` にコマンドを書けばチューナーとして呼べる (Linux・macOS)。C/N は出ず、衛星の TSID 指定 (`BS15:16625`) は渡せないので、衛星は番組表の入口しか受けられない
-- Sony nasne ([SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1`) も使える。別の機械から HTTP で呼ぶ置き方 (勧める) と、nasne の上で動かす置き方 (mipsel、公式の 2.6.29 カーネルで、起動・API・コマンドの起動までを実機で確認) がある。nasne は 1 回に 1 局しか出さず復号も機材の中で行うので、denpa 側に録画の選局へ局を付ける直しが要る。nasne に B-CAS が無くても、`nasne-recpt1` の `--no-bcas` (生の TS) を組み込みの機種 `Sony nasne (nasne-recpt1 HTTP raw)` で使い、復号はエージェントのカードで行える ([仕様書 6.5](docs/spec.md))
+- Sony nasne ([SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1`) も使える。別の機械から HTTP で呼ぶ置き方 (勧める) と、nasne の上で動かす置き方 (mipsel、公式の 2.6.29 カーネルで、起動・API・コマンドの起動までを実機で確認) がある。nasne は 1 回に 1 局しか出さず復号も機材の中で行うので、denpa 側に録画の選局へ局を付ける直しが要る。nasne に B-CAS が無くても、`nasne-recpt1` の `--no-bcas` (生の TS。[maimainoue/SonyNasne-debian](https://github.com/maimainoue/SonyNasne-debian) の fork にしかない) を組み込みの機種 `Sony nasne (nasne-recpt1 HTTP raw)` で使い、復号はエージェントのカードで行える ([仕様書 6.5](docs/spec.md))
 
 denpa 付属のエージェントは PLEX・e-Better の IT930x の機材を USB で直に持つので、px4_drv を入れたホストでは使えません。
 このエージェントは px4_drv を残したまま、その機材を denpa で使うためのものです。
