@@ -1,6 +1,6 @@
 //go:build linux
 
-package listen
+package app
 
 import (
 	"io"
@@ -39,7 +39,7 @@ func TestWrapListener_通常の経路(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln := Wrap(raw)
+	ln := wrapListener(raw)
 	defer ln.Close()
 	echoOnce(t, ln)
 	if ln.(*accept4Fallback).fallback.Load() {
@@ -53,7 +53,7 @@ func TestWrapListener_accept4が無いときの代替の経路(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ln := Wrap(raw).(*accept4Fallback)
+	ln := wrapListener(raw).(*accept4Fallback)
 	if err := ln.startFallback(); err != nil {
 		t.Fatal(err)
 	}

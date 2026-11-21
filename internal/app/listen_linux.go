@@ -1,8 +1,6 @@
 //go:build linux
 
-// Package listen は、accept4 が無いカーネルで accept に切り替える待ち受け口です。
-// メインの待ち受け (App.Listen) と鍵を配る待ち受けの両方で使います。
-package listen
+package app
 
 import (
 	"errors"
@@ -31,7 +29,7 @@ type accept4Fallback struct {
 	raw      syscall.RawConn // file の RawConn。TCPListener の RawConn は Read を使えない (EINVAL)
 }
 
-func Wrap(ln net.Listener) net.Listener { return &accept4Fallback{Listener: ln} }
+func wrapListener(ln net.Listener) net.Listener { return &accept4Fallback{Listener: ln} }
 
 func (l *accept4Fallback) Accept() (net.Conn, error) {
 	if !l.fallback.Load() {

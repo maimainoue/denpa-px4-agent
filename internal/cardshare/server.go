@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/b25"
-	"github.com/denpa-px4-agent/denpa-px4-agent/internal/listen"
 )
 
 // LocalCard は配る側が手元のカードに求めるものです。card.Manager が満たします。
@@ -34,7 +33,10 @@ type Server struct {
 	port   int
 	policy *Policy
 	local  LocalCard
-	logf   func(format string, args ...any)
+	// wrap は待ち受けを包む関数です。app は wrapListener (accept4 の無い古いカーネルで
+	// accept に切り替える) を渡します。nil なら、そのまま使います。
+	wrap func(net.Listener) net.Listener
+	logf func(format string, args ...any)
 
 	// 待ち受けのタイムアウト。New が既定値 (読み 15 秒・書き 10 秒・遊び 60 秒) を入れます。
 	// 貰う側は応答を 10 秒まで待つので、読みはそれより少し長くしています。
@@ -54,12 +56,13 @@ type Server struct {
 const maxRefused = 1024
 
 // New は鍵を配るサーバを作ります。nets は config.ParseShareNetworks の結果です。
-func New(port int, nets []*net.IPNet, local LocalCard, logf func(format string, args ...any)) *Server {
+// wrap は待ち受けを包む関数で、app は wrapListener を渡します。nil ならそのまま使います。
+func New(port int, nets []*net.IPNet, local LocalCard, wrap func(net.Listener) net.Listener, logf func(format string, args ...any)) *Server {
 	if logf == nil {
 		logf = func(format string, args ...any) {}
 	}
 	return &Server{
-		port: port, policy: NewPolicy(nets), local: local, logf: logf,
+		port: port, policy: NewPolicy(nets), local: local, wrap: wrap, logf: logf,
 		readTimeout: 15 * time.Second, writeTimeout: 10 * time.Second, idleTimeout: 60 * time.Second,
 		refused: map[string]time.Time{},
 	}
@@ -81,8 +84,11 @@ func (s *Server) Start() error {
 	if err != nil {
 		return fmt.Errorf("鍵を配る待ち受けが作れません (%v)", err)
 	}
-	// accept4 の無い古いカーネル (nasne の 2.6.29) では accept に切り替える (App.Listen と同じ)。
-	ln = listen.Wrap(ln)
+	// 渡された関数で待ち受けを包む。app は wrapListener (accept4 の無い古いカーネルで
+	// accept に切り替える) を渡す。nil なら、そのまま使う。
+	if s.wrap != nil {
+		ln = s.wrap(ln)
+	}
 	srv := &http.Server{
 		Handler: s.checkPeer(mux),
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {

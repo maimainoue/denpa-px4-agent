@@ -59,7 +59,7 @@ func startShareServer(t *testing.T, networks string) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := New(0, nets, fakeLocal{}, func(format string, args ...any) {})
+	srv := New(0, nets, fakeLocal{}, nil, func(format string, args ...any) {})
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func mustNets(t *testing.T) []*net.IPNet {
 
 // TestShareServerStartAfterClose は、閉じたあとの Start が待ち受けを残さないことを確かめます。
 func TestShareServerStartAfterClose(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
 	if err := srv.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -252,11 +252,29 @@ func TestShareServerStartAfterClose(t *testing.T) {
 	}
 }
 
+// TestShareServerWrapListener は、渡した関数で待ち受けを包むことを確かめます。
+// app は wrapListener を渡すので、ここでは呼ばれたことだけを確かめます。
+func TestShareServerWrapListener(t *testing.T) {
+	called := false
+	wrap := func(ln net.Listener) net.Listener {
+		called = true
+		return ln
+	}
+	srv := New(0, mustNets(t), fakeLocal{}, wrap, func(format string, args ...any) {})
+	defer srv.Close()
+	if err := srv.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("渡した関数が呼ばれていません")
+	}
+}
+
 // TestShareServerStalledBody は、本文を途中で止めた接続が切られることを確かめます。
 // ヘッダーを送ったあと 10 バイトだけ送って止めると、ReadTimeout で切断されます。
 // 切るときに 500 が返ることもありますが、応答の有無は問いません。切られることが大事です。
 func TestShareServerStalledBody(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
 	srv.readTimeout = 200 * time.Millisecond
 	if err := srv.Start(); err != nil {
 		t.Fatal(err)
@@ -291,7 +309,7 @@ func TestShareServerStalledBody(t *testing.T) {
 
 // TestLogRefusedCap は、断った記録が上限を超えないことを確かめます。
 func TestLogRefusedCap(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
 	for i := 0; i < maxRefused+500; i++ {
 		srv.logRefused(fmt.Sprintf("peer-%d", i), "CARD_SHARE_NETWORKS", "理由")
 	}
@@ -305,7 +323,7 @@ func TestLogRefusedCap(t *testing.T) {
 
 // TestLogRefusedExpiry は、10 分以上前の記録が捨てられることを確かめます。
 func TestLogRefusedExpiry(t *testing.T) {
-	srv := New(0, mustNets(t), fakeLocal{}, func(format string, args ...any) {})
+	srv := New(0, mustNets(t), fakeLocal{}, nil, func(format string, args ...any) {})
 	srv.mu.Lock()
 	srv.refused["old/CARD_SHARE_NETWORKS"] = time.Now().Add(-11 * time.Minute)
 	srv.mu.Unlock()

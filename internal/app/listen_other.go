@@ -1,8 +1,8 @@
 //go:build !linux
 
-package listen
+package app
 
 import "net"
 
 // accept4 の代替が要るのは Linux の古いカーネルだけ。
-func Wrap(ln net.Listener) net.Listener { return ln }
+func wrapListener(ln net.Listener) net.Listener { return ln }

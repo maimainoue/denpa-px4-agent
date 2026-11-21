@@ -21,7 +21,6 @@ import (
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/cardshare"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/config"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/devices"
-	"github.com/denpa-px4-agent/denpa-px4-agent/internal/listen"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/logx"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/manager"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/store"
@@ -160,7 +159,7 @@ func (a *App) Start(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("CARD_SHARE_NETWORKS が読めません (%v)", err)
 		}
-		a.share = cardshare.New(a.Cfg.CardSharePort, nets, a.Card, a.Log.Printf)
+		a.share = cardshare.New(a.Cfg.CardSharePort, nets, a.Card, wrapListener, a.Log.Printf)
 		if err := a.share.Start(); err != nil {
 			return err
 		}
@@ -302,7 +301,7 @@ func (a *App) Listen() (net.Listener, error) {
 	if err != nil {
 		return nil, err
 	}
-	return listen.Wrap(ln), nil // accept4 の無い古いカーネル (nasne の 2.6.29) では accept に切り替える
+	return wrapListener(ln), nil // accept4 の無い古いカーネル (nasne の 2.6.29) では accept に切り替える
 }
 
 // PairURL は組むときの URL。
