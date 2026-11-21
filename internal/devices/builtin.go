@@ -76,7 +76,8 @@ func Builtin() *Defs {
 	one("Siano RIO", "3275:0080", "px4video", false, "GR")
 
 	// Sony nasne (HTTP) は仕様書 6.5 の置き方 A。devices.json を書かなくても tuners.json だけで使える。
-	// busyExitCode は 22: curl -f が nasne の 503 で 22 で終わる。{device} は tuners.json の device の末尾 (ホスト名か IP)。
+	// busyExitCode は 22: curl -f が nasne の 503 で 22 で終わる。ただし curl -f は 400 以上ならどれでも 22 で
+	// 終わるので、404・500 も使用中に見える (#17)。{device} は tuners.json の device の末尾 (ホスト名か IPv4)。
 	s.Put(Def{Model: "Sony nasne (nasne-recpt1 HTTP)",
 		Command:       []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"},
 		ChannelFormat: FormatRecpt1,

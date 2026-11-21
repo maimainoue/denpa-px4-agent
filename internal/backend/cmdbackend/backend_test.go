@@ -16,6 +16,54 @@ func cmdDef(model string, types ...string) devices.Def {
 	}
 }
 
+func TestValidate_deviceの末尾はホスト名かIPv4(t *testing.T) {
+	defs := devices.NewDefs()
+	defs.Put(devices.Def{
+		Model:         "Sony nasne (nasne-recpt1 HTTP)",
+		Command:       []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"},
+		ChannelFormat: devices.FormatRecpt1,
+		Receivers:     []devices.Receiver{{Types: []string{"GR"}}},
+	})
+	defs.Put(cmdDef("recpt1 (PT3)", "GR")) // {device} だけの要素。検証しない
+	b := New(Config{Defs: defs})
+
+	for _, dev := range []string{"nasne.local", "192.168.0.43", "nasne"} {
+		if err := b.Validate("cmd:Sony nasne (nasne-recpt1 HTTP):" + dev); err != nil {
+			t.Errorf("%s: 通るはず: %v", dev, err)
+		}
+	}
+	for _, dev := range []string{"127.0.0.1:8080/private#", "a@b", "a/b", "a b", "", "-a"} {
+		if err := b.Validate("cmd:Sony nasne (nasne-recpt1 HTTP):" + dev); err == nil {
+			t.Errorf("%q: 断るはず", dev)
+		}
+	}
+	// {device} だけの要素なら、ホスト名でなくても通る
+	if err := b.Validate("cmd:recpt1 (PT3):nasne.local:8301"); err != nil {
+		t.Errorf("recpt1: 通るはず: %v", err)
+	}
+}
+
+func TestOpen_deviceの末尾はホスト名かIPv4(t *testing.T) {
+	defs := devices.NewDefs()
+	defs.Put(devices.Def{
+		Model:         "Sony nasne (nasne-recpt1 HTTP)",
+		Command:       []string{"curl", "-sfN", "http://{device}:8301/tuner/{channel}{sidQuery}"},
+		ChannelFormat: devices.FormatRecpt1,
+		Receivers:     []devices.Receiver{{Types: []string{"GR"}}},
+	})
+	b := New(Config{Defs: defs})
+
+	for _, dev := range []string{"127.0.0.1:8080/private#", "a@b", "a/b", "a b", "-a"} {
+		_, err := b.Open(backend.TunerSpec{Name: "x", Device: "cmd:Sony nasne (nasne-recpt1 HTTP):" + dev})
+		if err == nil || backend.StatusOf(err) != 400 {
+			t.Errorf("%q: 400 のはず: %v", dev, err)
+		}
+	}
+	if _, err := b.Open(backend.TunerSpec{Name: "x", Device: "cmd:Sony nasne (nasne-recpt1 HTTP):192.168.0.43"}); err != nil {
+		t.Errorf("192.168.0.43: 通るはず: %v", err)
+	}
+}
+
 func TestOpen_deviceから機種とデバイスを決める(t *testing.T) {
 	defs := devices.NewDefs()
 	defs.Put(cmdDef("recpt1 (PT3)", "GR"))
