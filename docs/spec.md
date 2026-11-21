@@ -443,7 +443,7 @@ denpa のある機械 (か、同じ LAN の Linux・macOS) でエージェント
 ```
 
 - `tuners.json` は `{"name": "nasne", "types": ["GR", "BS", "CS"], "device": "cmd:Sony nasne (nasne-recpt1 HTTP):nasne.local"}` の 1 台 (既定の 1 系統)。nasne 側を `--dual-tuner` で動かすなら、`types` を `["GR"]` と `["BS", "CS"]` に分けた 2 台にする (同じ `device`)
-- `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
+- `curl -f` は 503 で終了コード 22 なので `busyExitCode` は 22。ただし `curl -f` は 400 以上のどの HTTP ステータスでも 22 で終わるので、404・500 も使用中 (409) に見える。区別は今はできない ([#17](https://github.com/maimainoue/denpa-px4-agent/issues/17))。`-N` で溜めない。`channelFormat: recpt1` が `27`・`BS15_0`・`CS2` を作る
 - 衛星の `:TSID` は、この設定例では渡せない。上の `command` に `tsidArg` が無いので、**`:TSID` 付きの選局 (`BS15:16625` など) は 400 で断られる** (6.2 の制限と同じ)。`:TSID` 無しの `BS15` は `BS15_0` になる (`channelFormat: recpt1` は衛星を常に `_0` にする。スロット番号を付けた `BS15_1` などは、この経路では選べない)。nasne の HTTP に `--tsid` に当たる指定 (`tsid=`) があるかは、版によるかもしれず、実機の版では未確認 ([20](#20-決めていないこと確かめること))。あると分かれば、`tsidArg` を足して渡せる
 - 選局の切り替えは curl を殺して起動し直す。nasne 側はロックを 4 秒待つので、連続の切り替えでは `busyExitCode` が返ることがある (409 で denpa が掛け直す)
 - nasne 側の `/status` と `nasne-waked` (予約の 5 分前に起こす) は使わない。電源を落とす運用は denpa とは合わない (録画の時刻を nasne が知らない) ので、nasne は常時起動にする
@@ -834,7 +834,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 - 空の配列は定義を消す (自動検出に戻す)
 - 書き換えは、選局と読み出しが止まるのを待ってから行う。名前が同じチューナーは選局を保ったまま定義だけ替え、無効にしたチューナーの選局は畳んで利用者を残さない
 - 応答は `GET /denpa/tuners` と同じ
-- 選局コマンドのような自由な文字列は受け取らない。`device` は `px4:`・`px4host:`・`cmd:` で始まるものだけ受け、それ以外は 400。`cmd:` の `<model>` は機材の定義にある `command` 付きの機種に限る (無ければ 400)
+- 選局コマンドのような自由な文字列は受け取らない。`device` は `px4:`・`px4host:`・`cmd:` で始まるものだけ受け、それ以外は 400。`cmd:` の `<model>` は機材の定義にある `command` 付きの機種に限る (無ければ 400)。`command` の引数の一部に `{device}` が入る機種では、`device` の末尾はホスト名か IPv4 だけにする (それ以外は 400)
 
 ### 10.5 `PUT /denpa/channels`
 
