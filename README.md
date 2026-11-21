@@ -41,10 +41,14 @@ go build ./cmd/denpa-px4-agent
 公式カーネル (2.6.29) の nasne で、エージェントの起動・API・コマンドの起動まで通ることを実機で確かめました (`accept4` が無いので、代替の待ち受けを内蔵)。地デジの実放送は、TLS で約 16.5 Mbps を 30 秒流せることまで確かめました。denpa 本体から録画・視聴を最後まで通すこと、長時間、衛星は未確認です。ビルドは次のとおりです。
 
 ```sh
+# 標準のビルド (TLS の暗号は純 Go で、遅い)
 GOOS=linux GOARCH=mipsle GOMIPS=softfloat CGO_ENABLED=0   go build -trimpath -tags nasne,nethttpomithttp2 -ldflags "-s -w" -o denpa-px4-agent ./cmd/denpa-px4-agent
+
+# アセンブリ入りのビルド (nasne 向けのリリースはこちら。MIPS32r2 以上の機材だけで動く。nasne の 74Kc は r2)
+VERSION=v0.1.0 bash scripts/build-nasne.sh
 ```
 
-実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。実放送の約 16.5 Mbps を TLS で流すと、エージェントは 1 コアの約 90%、コア全体は 94〜97% で、余裕がほとんど無い。大半は TLS の暗号 (純 Go の ChaCha20-Poly1305) です。さらに denpa は、視聴中に同じ TS をロゴの取得でもう 1 本読み続けるので、実際には 2 本ぶん要ります)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。暗号の MIPS アセンブリ化 (エージェントの CPU が約半分になり、denpa の視聴 (2 本) でも 1 コアに収まった) は検討中です ([#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。
+実機で測った負荷と、メモリ・サイズの結果は仕様書 6.5 の置き方 B にあります (メモリは足りる。実放送の約 16.5 Mbps を TLS で流すと、エージェントは 1 コアの約 90%、コア全体は 94〜97% で、余裕がほとんど無い。大半は TLS の暗号 (純 Go の ChaCha20-Poly1305) です。さらに denpa は、視聴中に同じ TS をロゴの取得でもう 1 本読み続けるので、実際には 2 本ぶん要ります)。余裕を取るなら、エージェントを別の機械に置く置き方 A を使ってください。暗号の MIPS アセンブリ入りのビルド (`scripts/build-nasne.sh`。エージェントの CPU が約半分になり、denpa の視聴 (2 本) でも 1 コアに収まる) が、nasne 向けのリリースになります ([#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。アセンブリは golang/crypto の PR 294 の固定のコピー (`third_party/x-crypto-mipsle`) で、**配るときは、バイナリのとなりの `*.licenses.txt` (MIT と BSD のライセンス) を付けてください**。
 
 ### 未実装・未確認
 

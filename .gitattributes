@@ -1,2 +1,4 @@
 # シェルスクリプトは、Windows のチェックアウトでも LF のままにする (CRLF だと Linux の sh で set -eu が動かない)
 *.sh text eol=lf
+# 取り込んだファイルは、上流のままのバイト列で比べる (Windows のチェックアウトでも CRLF に変えない)
+third_party/x-crypto-mipsle/** -text
