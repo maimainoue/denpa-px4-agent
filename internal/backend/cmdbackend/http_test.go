@@ -269,6 +269,71 @@ func TestHTTP_組み込みのnasneの2機種を取り違えない(t *testing.T) 
 		}
 		if def.URL != want || host != "192.168.0.43" {
 			t.Errorf("%s: url=%q host=%q", dev, def.URL, host)
+
+func TestHTTP_200で本文が空のまま閉じたら同期しなかった(t *testing.T) {
+	tn, _ := newHTTPTestTuner(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200) // 本文なし
+	}), nil)
+	err := tn.Tune(tuneReq)
+	if !errors.Is(err, backend.ErrNoLock) {
+		t.Fatalf("got %v", err)
+	}
+	if strings.Contains(err.Error(), "HTTP 200 を返しました") {
+		t.Errorf("200 を失敗として返している: %v", err)
+	}
+}
+
+func TestHTTP_200のあと最初のTSの前に切れたら理由が伝わる(t *testing.T) {
+	tn, _ := newHTTPTestTuner(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "100000") // 約束したのに、1 バイトも送らず閉じる
+		w.WriteHeader(200)
+		w.(http.Flusher).Flush()
+		hj, _ := w.(http.Hijacker)
+		c, _, _ := hj.Hijack()
+		c.Close()
+	}), nil)
+	err := tn.Tune(tuneReq)
+	if err == nil || errors.Is(err, backend.ErrBusy) || errors.Is(err, backend.ErrNoLock) {
+		t.Fatalf("got %v", err)
+	}
+	if !strings.Contains(err.Error(), "HTTP で繋がりません") {
+		t.Errorf("理由が隠れている: %v", err)
+	}
+}
+
+func TestHTTP_503の本文が終わらなくても使用中の409(t *testing.T) {
+	done := make(chan struct{})
+	tn, _ := newHTTPTestTuner(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(503)
+		w.Write([]byte("busy"))
+		w.(http.Flusher).Flush()
+		<-done // 本文を閉じない
+	}), nil)
+	// srv.Close はハンドラの終わりを待つので、その前 (Cleanup は後に足したものから先に走る) に解放する
+	t.Cleanup(func() { close(done) })
+	began := time.Now()
+	err := tn.Tune(tuneReq)
+	if !errors.Is(err, backend.ErrBusy) || backend.StatusOf(err) != 409 {
+		t.Fatalf("got %v (%d)", err, backend.StatusOf(err))
+	}
+	if d := time.Since(began); d > 2800*time.Millisecond {
+		t.Errorf("本文を待ちすぎ: %v", d)
+	}
+}
+
+func TestHTTP_503と404でも本文の先頭を記録に出す(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		body   string
+	}{{503, "locked by other"}, {404, "no signal"}} {
+		tn, rec := newHTTPTestTuner(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, tc.body, tc.status)
+		}), nil)
+		if err := tn.Tune(tuneReq); err == nil {
+			t.Fatal("成功した")
+		}
+		if !rec.has(tc.body) {
+			t.Errorf("%d の本文 %q が記録に出ていない", tc.status, tc.body)
 		}
 	}
 }

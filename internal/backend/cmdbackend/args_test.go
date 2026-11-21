@@ -83,3 +83,18 @@ func TestBuildArgs(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildArgs_urlでは値をエスケープする(t *testing.T) {
+	def := &devices.Def{URL: "http://{device}:8301/tuner?channel={channel}{sidQuery}"}
+	got := BuildArgs(def, Params{Device: "nasne.local", Channel: []string{"T", "27"}, Service: 1056, TSID: -1})
+	want := []string{"http://nasne.local:8301/tuner?channel=T%2027?sid=1056"}
+	if len(got) != 1 || got[0] != want[0] {
+		t.Errorf("got %v (want %v)", got, want)
+	}
+	// 通常の値 (27・BS15_0・?sid=) は変わらない
+	def = &devices.Def{URL: "http://{device}:8301/tuner/{channel}{sidQuery}"}
+	got = BuildArgs(def, Params{Device: "192.168.0.43", Channel: []string{"BS15_0"}, Service: 23608, TSID: -1})
+	if len(got) != 1 || got[0] != "http://192.168.0.43:8301/tuner/BS15_0?sid=23608" {
+		t.Errorf("got %v", got)
+	}
+}
