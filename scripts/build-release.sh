@@ -24,8 +24,12 @@ build() {
 	local goos=$1 goarch=$2 out=$3 tags=$4
 	shift 4
 	echo "== $goos/$goarch -> $out"
+	local ldflags=$LDFLAGS
+	# macOS は cgo なし (内部リンク) だと LC_UUID が付かず、PCSC.framework を呼ぶ (purego) 実行ファイルが
+	# dyld に弾かれる (golang/go#68678)。-B gobuildid で付ける
+	if [ "$goos" = darwin ]; then ldflags="$ldflags -B gobuildid"; fi
 	env CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" "$@" \
-		go build -trimpath -tags "$tags" -ldflags "$LDFLAGS" -o "$DIST/$out" ./cmd/denpa-px4-agent
+		go build -trimpath -tags "$tags" -ldflags "$ldflags" -o "$DIST/$out" ./cmd/denpa-px4-agent
 }
 
 build linux amd64 denpa-px4-agent-linux-amd64 ""
