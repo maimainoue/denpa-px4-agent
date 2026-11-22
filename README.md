@@ -96,7 +96,7 @@ denpa と一緒に使うときは、`deploy/compose.override.yml` を denpa の 
 ### 未実装・未確認
 
 - A-CAS カードは B-CAS 互換モードで使えます (B-CAS の INT が断られたら P2 を変えて開き直す)。実機の A-CAS カード (外付けの SCR3310) と、ケーブル回線で、MPEG-2 TS のスクランブルを復号できることを確かめました。契約確認 (`0x3C`) の P2 は未確認です。4K の MMT/TLV (ARIB STD-B61) は、A-CAS のカードで復号します ([docs/b61.md](docs/b61.md)。実機のケーブル回線で、復号の結果の形まで確かめました。映像として再生できるかは denpa 側で確認が要ります)
-- Linux の B-CAS は pcscd 経由 (`internal/pcsc`。pure Go で pcscd の socket に直接つなぐ) で使えます。内蔵リーダー (px4-drv-pcsc) は実機の pcscd 1.9.9 と B-CAS カードで確かめました。外付けリーダー (libccid) は pcscd から同じように見えるはずですが、実物では確かめていません。OS の PC/SC (Windows の `winscard.dll`、macOS の PCSC.framework) の外付けリーダーはまだありません。Windows と macOS の内蔵リーダーは、DriverHost_PX4 のカードのパイプで使えます
+- Linux の B-CAS は pcscd 経由 (`internal/pcsc`。pure Go で pcscd の socket に直接つなぐ) で使えます。内蔵リーダー (px4-drv-pcsc) は実機の pcscd 1.9.9 と B-CAS カードで確かめました。外付けリーダー (libccid) は pcscd から同じように見えるはずですが、実物では確かめていません。Windows の外付けリーダーは、OS の PC/SC (System32 の `winscard.dll`。`internal/winscard`) で使えます。`WINSCARD_DLLS` に絶対パスを書くと、別の場所の PC/SC の DLL も足せます (`;` 区切り)。実機の Windows で DLL を読んでリーダーを引くところまでは確かめましたが、外付けリーダーとカードでの復号は、まだ確かめていません。macOS の PCSC.framework の外付けリーダーはまだありません。Windows と macOS の内蔵リーダーは、DriverHost_PX4 のカードのパイプで使えます
 - `--tune`・`--devices`・`--card`・`--decode-file`・`--status` はありません
 - ISDB-C (`CATV`) と J.83B (`SKY`) は、chardev では `PTX_SET_SYSTEM_MODE(0x40)` + `PTX_SET_CHANNEL` (TSMF の 0 本目) と、`PTXT_SET_PARAMS` + `PTXT_TUNE` (TSMF の 1 本目以降と J.83B) で選局します。ISDB-C の映像と TSMF の 1 本目以降、J.83Bは実際の放送では確かめていません。TSMF の `X-Denpa-Tsmf-Streams` は返しません。
 - Windows と macOS の機材の自動検出 (SetupDi・IOKit) は無いので、`tuners.json` に `px4host:<GUID>:<受信機の番号>:<台目>` を手で書きます。組み込みの表で GUID を持つのは PX-W3U4 だけです

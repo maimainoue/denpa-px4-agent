@@ -642,10 +642,16 @@ denpa の `tests/fake/tuner-scenes.ts` の場面が、この決まりの受け�
 | OS      | 内蔵リーダー                                                                                  | 外付けの USB リーダー                                 |
 | ------- | --------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | Linux   | pcscd (px4-drv-pcsc の `libifd-px4.so` が出す)。名前は `PLEX PX-MLT5PE Smart Card Reader [ID: …] (…) 00 00` のような形 | pcscd (libccid)                                        |
-| Windows | DriverHost_PX4 のカードのパイプ (`LIST_READERS`・`CONNECT`・`TRANSMIT`)。名前は `PLEX PX-MLT5PE Smart Card Reader (ID: …)` | System32 の `winscard.dll` (`SCardListReadersW` など)。WinSCard_PX4 の互換 DLL は使わない (エージェントの隣に置かない) |
+| Windows | DriverHost_PX4 のカードのパイプ (`LIST_READERS`・`CONNECT`・`TRANSMIT`)。名前は `PLEX PX-MLT5PE Smart Card Reader (ID: …)` | System32 の `winscard.dll` (`SCardListReadersW` など)。`WINSCARD_DLLS` で足した DLL も使う。WinSCard_PX4 の互換 DLL は、エージェントの隣に置いても読まない |
 | macOS   | DriverHost_PX4 のカードのパイプ。PLEX の内蔵リーダーは PCSC.framework には出ない              | PCSC.framework (`SCardListReaders`)                   |
 
-Linux の pcscd には、pcsc-lite の socket (`/run/pcscd/pcscd.comm`。`PCSCLITE_CSOCK_NAME` で変えられる) に直接つなぐ pure Go のクライアントを書きます (cgo を使わず、静的なバイナリで distroless に置けるように)。プロトコルは pcsc-lite の `winscard_msg.h` のとおり (バージョン 4.4)。使うのは `ESTABLISH_CONTEXT`・`LIST_READERS`・`CONNECT`・`TRANSMIT`・`DISCONNECT`・`GET_STATUS_CHANGE` だけです。pure Go で間に合わなければ cgo で `libpcsclite` を使ってもよく、その場合はイメージを distroless から変えます。Windows の `winscard.dll` は `golang.org/x/sys/windows` の `LazyDLL` で呼び、macOS の PCSC.framework は cgo で呼びます (macOS のビルドは cgo あり)。
+Linux の pcscd には、pcsc-lite の socket (`/run/pcscd/pcscd.comm`。`PCSCLITE_CSOCK_NAME` で変えられる) に直接つなぐ pure Go のクライアントを書きます (cgo を使わず、静的なバイナリで distroless に置けるように)。プロトコルは pcsc-lite の `winscard_msg.h` のとおり (バージョン 4.4)。使うのは `ESTABLISH_CONTEXT`・`LIST_READERS`・`CONNECT`・`TRANSMIT`・`DISCONNECT`・`GET_STATUS_CHANGE` だけです。pure Go で間に合わなければ cgo で `libpcsclite` を使ってもよく、その場合はイメージを distroless から変えます。Windows の `winscard.dll` は cgo を使わず、`golang.org/x/sys/windows` の `LoadLibraryEx` で読み、`syscall.SyscallN` で呼びます (`internal/winscard`)。macOS の PCSC.framework は cgo で呼びます (macOS のビルドは cgo あり)。
+
+**Windows の PC/SC の DLL は 1 つに限りません。** 既定は System32 の `winscard.dll` で、環境変数 `WINSCARD_DLLS` に絶対パスを `;` で区切って書くと、そのあとに足します。
+
+- DLL は絶対パスで読みます。探し場所は、その DLL の隣とシステムの場所に絞り (`LOAD_LIBRARY_SEARCH_DEFAULT_DIRS` と `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR`)、カレントディレクトリと `PATH` は見ません。相対パスは起動時に断ります (終了コード 2)。同じパス (大文字小文字を区別しない) は 1 つにします
+- DLL ごとに別の PC/SC の世界 (context) です。リーダーは DLL の順に並べ、**同じ名前が複数の DLL に出たら先の DLL のものだけ**を使い、そのリーダーはその DLL で開きます
+- 読めない DLL (無い・ロードできない・関数が足りない) は、パスと理由をログに 1 度だけ出し (同じ理由が続くあいだ)、ほかの DLL と経路は止めません。次に探し直すときにまた読みに行きます。全部の DLL が失敗したときだけ、経路ごと失敗として `/denpa/card` の `message` に出します
 
 共通の決まり。
 
@@ -906,6 +912,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 | `CARD_URL`                                                                    | (空)                                                           | 鍵を貰う先 (配る側の `CARD_SHARE_PORT`)。書くと手元のカードを使わない                              |
 | `CARD_SHARE_PORT` / `CARD_SHARE_NETWORKS` / `CARD_TTL` / `CARD_SHARE_MAX_RTT` | 配らない                                                       | [9.5](#95-鍵を配る貰う)                                                                            |
 | `PCSCLITE_CSOCK_NAME`                                                         | `/run/pcscd/pcscd.comm`                                        | Linux の pcscd の socket                                                                           |
+| `WINSCARD_DLLS`                                                               | (空。System32 の `winscard.dll` だけ)                           | Windows で、System32 のあとに足す PC/SC の DLL。絶対パスを `;` で区切る。相対パスなら起動しない ([9.1](#91-カードリーダー)) |
 | `PX4_RUNTIME_DIR`                                                             | `/tmp`                                                         | macOS の DriverHost_PX4 の socket の置き場                                                         |
 | `DRIVER_HOST_PATH`                                                            | 実行ファイルの隣の `DriverHost_PX4.exe`                        | Windows で DriverHost_PX4 を起動するときのパス                                                     |
 | `DRIVER_HOST_INI`                                                             | `DRIVER_HOST_PATH` の隣の `DriverHost_PX4.ini`                 | Windows と macOS で、機材の定義 (`DeviceInterfaceGUID`・`VendorId`・`ProductId`・受信機) を読む元   |
