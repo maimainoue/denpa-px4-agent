@@ -40,6 +40,9 @@ type Config struct {
 	// CardShareMaxRTTMs は配る側が見る往復時間の上限 (ミリ秒)。0 なら見ません。
 	CardShareMaxRTTMs int
 	PcscSock          string
+	// WinscardDLLs は Windows で、System32 の winscard.dll のほかに使う PC/SC の DLL (絶対パス)。
+	// WINSCARD_DLLS に `;` 区切りで書く。
+	WinscardDLLs []string
 	RuntimeDir        string
 	DriverHostPath    string
 	DriverHostIni     string
@@ -129,6 +132,9 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 		return nil, err
 	}
 	c.PcscSock = def(getenv("PCSCLITE_CSOCK_NAME"), "/run/pcscd/pcscd.comm")
+	if c.WinscardDLLs, err = ParseWinscardDLLs(getenv("WINSCARD_DLLS")); err != nil {
+		return nil, err
+	}
 	c.RuntimeDir = def(getenv("PX4_RUNTIME_DIR"), "/tmp")
 	hostName := "DriverHost_PX4"
 	if goos == "windows" {
@@ -146,6 +152,38 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 	}
 	c.StreamQueueBytes = int64(q)
 	return c, nil
+}
+
+// ParseWinscardDLLs は WINSCARD_DLLS (`;` 区切りの絶対パス) を分ける。空の要素は飛ばし、
+// 同じパス (大文字小文字を区別しない) は先のものだけ残す。相対パスは、探し場所を選べないので受けない。
+func ParseWinscardDLLs(v string) ([]string, error) {
+	var out []string
+	seen := map[string]bool{}
+	for _, s := range strings.Split(v, ";") {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if !isWindowsAbs(s) {
+			return nil, fmt.Errorf("WINSCARD_DLLS は絶対パス (`C:\\…`) を `;` で区切って書きます (%s)", s)
+		}
+		k := strings.ToLower(strings.ReplaceAll(s, "/", `\`))
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// isWindowsAbs は `C:\…`・`C:/…`・`\server\share\…` の形か。OS に依らず見る (試験を Linux でも回すため)。
+func isWindowsAbs(s string) bool {
+	if len(s) >= 3 && s[1] == ':' && (s[2] == '\\' || s[2] == '/') &&
+		(s[0] >= 'A' && s[0] <= 'Z' || s[0] >= 'a' && s[0] <= 'z') {
+		return true
+	}
+	return strings.HasPrefix(s, `\\`)
 }
 
 func def(v, d string) string {

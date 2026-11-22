@@ -166,3 +166,38 @@ func TestLoad_CARD_SHARE_MAX_RTT(t *testing.T) {
 		}
 	}
 }
+
+func TestLoad_WINSCARD_DLLS(t *testing.T) {
+	load := func(v string) (*Config, error) {
+		return Load(func(k string) string {
+			if k == "WINSCARD_DLLS" {
+				return v
+			}
+			return ""
+		}, "windows", `C:\denpa\denpa-px4-agent.exe`)
+	}
+	c, err := load("")
+	if err != nil || len(c.WinscardDLLs) != 0 {
+		t.Fatalf("未指定: %+v %v", c, err)
+	}
+	// 空の要素・前後の空白・大文字小文字だけ違う重複は整える。順番は書いたとおり
+	c, err = load(` C:\vendor\a\winscard.dll ;; D:/vendor/b/winscard.dll;c:\VENDOR\A\winscard.dll;\\nas\share\winscard.dll`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{`C:\vendor\a\winscard.dll`, `D:/vendor/b/winscard.dll`, `\\nas\share\winscard.dll`}
+	if len(c.WinscardDLLs) != len(want) {
+		t.Fatalf("got %q, want %q", c.WinscardDLLs, want)
+	}
+	for i := range want {
+		if c.WinscardDLLs[i] != want[i] {
+			t.Errorf("[%d] = %q, want %q", i, c.WinscardDLLs[i], want[i])
+		}
+	}
+	// 相対パス・ドライブなし・ファイル名だけは、探し場所を選べないので受けない
+	for _, bad := range []string{`winscard.dll`, `.\winscard.dll`, `\vendor\winscard.dll`, `C:winscard.dll`, `C:\ok.dll;relative.dll`, `/usr/lib/libpcsclite.so`} {
+		if _, err := load(bad); err == nil {
+			t.Errorf("%q を受けました", bad)
+		}
+	}
+}
