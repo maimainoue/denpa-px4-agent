@@ -37,6 +37,9 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test ./...
+      # OS の PC/SC (winscard.dll・PCSC.framework) を実際に読む試験が走ったか、リーダーが何個見えたかを、ログに残す
+      - name: go test -v (PC/SC)
+        run: go test -count=1 -v ./internal/winscard
       - name: go vet (試験カード)
         run: go vet -tags fakecard ./...
       - name: go test (試験カード)
