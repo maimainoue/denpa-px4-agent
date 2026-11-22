@@ -1,10 +1,10 @@
-// Package winscard は OS の PC/SC (Windows の winscard.dll) を使う card.Provider (仕様書 9.1)。
+// Package winscard は OS の PC/SC (Windows の winscard.dll、macOS の PCSC.framework) を使う card.Provider (仕様書 9.1)。
 //
 // DLL は 1 つに限らない。System32 の winscard.dll のほかに、設定 (WINSCARD_DLLS) で絶対パスを指した DLL を
 // 足せる。DLL ごとに別の PC/SC の世界 (context) なので、リーダーは DLL をまたいで名前で見分ける。
 // 同じ名前が複数の DLL に出たら、先に並べた DLL のものを使う。
 //
-// DLL を呼ぶ部分は API の向こうに置く。ここは OS に依らず、偽の API で試せる (DLL を読むのは dll_windows.go)。
+// DLL を呼ぶ部分は API の向こうに置く。ここは OS に依らず、偽の API で試せる (読むのは dll_windows.go と dll_darwin.go)。
 package winscard
 
 import (
@@ -127,7 +127,7 @@ func (p *Provider) api(l *lib) (API, error) {
 	}
 	a, err := p.load(l.path)
 	if err != nil {
-		return nil, fmt.Errorf("PC/SC の DLL を読めません (%s): %w", l.path, err)
+		return nil, fmt.Errorf("PC/SC のライブラリを読めません (%s): %w", l.path, err)
 	}
 	l.api = a
 	return a, nil
@@ -232,7 +232,7 @@ func (p *Provider) Open(name string) (card.Link, error) {
 		last = err
 	}
 	if last == nil {
-		last = errors.New("PC/SC の DLL がありません")
+		last = errors.New("PC/SC のライブラリがありません")
 	}
 	return nil, last
 }
