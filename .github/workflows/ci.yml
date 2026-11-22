@@ -20,7 +20,7 @@ jobs:
     env:
       # macOS は cgo なし (内部リンク) だと LC_UUID が付かず、purego を取り込んだ実行ファイルが dyld に弾かれる
       # (golang/go#68678)。-B gobuildid で付ける。
-      GOFLAGS: ${{ runner.os == 'macOS' && '-ldflags=-B=gobuildid' || '' }}
+      GOFLAGS: ${{ matrix.os == 'macos-latest' && '-ldflags=-B=gobuildid' || '' }}
     strategy:
       fail-fast: false
       matrix:
