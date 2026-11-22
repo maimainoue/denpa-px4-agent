@@ -12,17 +12,22 @@ permissions:
   contents: read
 
 jobs:
-  # テストと go vet を、Linux と Windows で回す。OS ごとの処理 (往復時間・TTL・名前付きパイプなど) が、
+  # テストと go vet を、Linux・Windows・macOS で回す。OS ごとの処理 (往復時間・TTL・名前付きパイプなど) が、
   # 片方の OS だけで壊れるのを見つけるため (#27 では、Windows の往復時間だけが失敗していた)。
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      # macOS は cgo なし (内部リンク) だと LC_UUID が付かず、purego を取り込んだ実行ファイルが dyld に弾かれる
+      # (golang/go#68678)。-B gobuildid で付ける。
+      GOFLAGS: ${{ matrix.os == 'macos-latest' && '-ldflags=-B=gobuildid' || '' }}
     strategy:
       fail-fast: false
       matrix:
         os:
           - ubuntu-latest
           - windows-latest
+          - macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -32,6 +37,9 @@ jobs:
         run: go vet ./...
       - name: go test
         run: go test ./...
+      # OS の PC/SC (winscard.dll・PCSC.framework) を実際に読む試験が走ったか、リーダーが何個見えたかを、ログに残す
+      - name: go test -v (PC/SC)
+        run: go test -count=1 -v ./internal/winscard
       - name: go vet (試験カード)
         run: go vet -tags fakecard ./...
       - name: go test (試験カード)

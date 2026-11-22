@@ -645,7 +645,7 @@ denpa の `tests/fake/tuner-scenes.ts` の場面が、この決まりの受け�
 | Windows | DriverHost_PX4 のカードのパイプ (`LIST_READERS`・`CONNECT`・`TRANSMIT`)。名前は `PLEX PX-MLT5PE Smart Card Reader (ID: …)` | System32 の `winscard.dll` (`SCardListReadersW` など)。`WINSCARD_DLLS` で足した DLL も使う。WinSCard_PX4 の互換 DLL は、エージェントの隣に置いても読まない |
 | macOS   | DriverHost_PX4 のカードのパイプ。PLEX の内蔵リーダーは PCSC.framework には出ない              | PCSC.framework (`SCardListReaders`)                   |
 
-Linux の pcscd には、pcsc-lite の socket (`/run/pcscd/pcscd.comm`。`PCSCLITE_CSOCK_NAME` で変えられる) に直接つなぐ pure Go のクライアントを書きます (cgo を使わず、静的なバイナリで distroless に置けるように)。プロトコルは pcsc-lite の `winscard_msg.h` のとおり (バージョン 4.4)。使うのは `ESTABLISH_CONTEXT`・`LIST_READERS`・`CONNECT`・`TRANSMIT`・`DISCONNECT`・`GET_STATUS_CHANGE` だけです。pure Go で間に合わなければ cgo で `libpcsclite` を使ってもよく、その場合はイメージを distroless から変えます。Windows の `winscard.dll` は cgo を使わず、`golang.org/x/sys/windows` の `LoadLibraryEx` で読み、`syscall.SyscallN` で呼びます (`internal/winscard`)。macOS の PCSC.framework は cgo で呼びます (macOS のビルドは cgo あり)。
+Linux の pcscd には、pcsc-lite の socket (`/run/pcscd/pcscd.comm`。`PCSCLITE_CSOCK_NAME` で変えられる) に直接つなぐ pure Go のクライアントを書きます (cgo を使わず、静的なバイナリで distroless に置けるように)。プロトコルは pcsc-lite の `winscard_msg.h` のとおり (バージョン 4.4)。使うのは `ESTABLISH_CONTEXT`・`LIST_READERS`・`CONNECT`・`TRANSMIT`・`DISCONNECT`・`GET_STATUS_CHANGE` だけです。pure Go で間に合わなければ cgo で `libpcsclite` を使ってもよく、その場合はイメージを distroless から変えます。Windows の `winscard.dll` は cgo を使わず、`golang.org/x/sys/windows` の `LoadLibraryEx` で読み、`syscall.SyscallN` で呼びます (`internal/winscard`)。macOS の PCSC.framework も cgo を使わず、`github.com/ebitengine/purego` で `dlopen`・`dlsym` して呼びます (同じ `internal/winscard`。リーダーを束ねる部分は Windows と共通で、`SCardListReaders` などの呼び出しだけが OS ごとに違います)。macOS の PCSC.framework は `LONG`・`SCARDCONTEXT`・`SCARDHANDLE` が int32、`DWORD` が uint32 で、リーダーの名前は UTF-8 です。
 
 **Windows の PC/SC の DLL は 1 つに限りません。** 既定は System32 の `winscard.dll` で、環境変数 `WINSCARD_DLLS` に絶対パスを `;` で区切って書くと、そのあとに足します。
 
@@ -982,7 +982,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 
 ## 16. 配布
 
-- Go 1.23 以上。`CGO_ENABLED=0` で静的にビルドする (macOS も。今の実装は DriverHost_PX4 への UNIX ドメインソケットだけで、cgo を使わない)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
+- Go 1.23 以上。`CGO_ENABLED=0` で静的にビルドする (macOS も。DriverHost_PX4 への UNIX ドメインソケットと、PCSC.framework (purego で dlopen) で、cgo を使わない)。`linux/amd64`・`linux/arm64`・`windows/amd64`・`darwin/arm64`・`darwin/amd64` の 1 ファイルずつ
 - nasne 向けに `linux/mipsle` (`GOMIPS=softfloat`) も出す ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1) の置き方 B)。`cmd` バックエンドだけで、pcscd と chardev は使わない構成なので、リリースの表では「試験的」と書く
 - **nasne 向けのバイナリは、ChaCha20-Poly1305 の MIPSLE のアセンブリ入りの専用ビルド**にする (`scripts/build-nasne.sh`。取り込んだアセンブリ `third_party/x-crypto-mipsle` を、専用に複製した GOROOT に当て、`-D=GOMIPS_r2` で `ROTR` を使う)。標準のビルドより、TLS の暗号が約 4.5 倍速く、実放送の TLS でエージェントの CPU が 1 コアの 88〜92% → 42〜43% になる ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1)、[#3](https://github.com/maimainoue/denpa-px4-agent/issues/3))。**MIPS32r2 以上の機材だけで動く** (nasne の 74Kc は r2。r1 の機材では、実行時に不正な命令になる)。配るときは、バイナリのとなりの `*.licenses.txt` (アセンブリの MIT と、Go の BSD のライセンス) を付ける。上流 (golang/crypto の PR 294) にマージされたら、この専用ビルドは要らなくなる
 
