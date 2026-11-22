@@ -39,6 +39,17 @@ func TestLoadDLLRejectsRelativeAndMissing(t *testing.T) {
 	}
 }
 
+// 設定に `/` 区切りで書かれたパスでも読める (LoadLibraryEx は `\` を求める)。
+func TestLoadDLLAcceptsForwardSlashes(t *testing.T) {
+	p := strings.ReplaceAll(DefaultDLL(), `\`, "/")
+	if p == DefaultDLL() {
+		t.Fatalf("`/` に直せていません: %s", p)
+	}
+	if _, err := LoadDLL(p); err != nil {
+		t.Errorf("%s を読めません: %v", p, err)
+	}
+}
+
 // 本物の System32\winscard.dll を読んで、リーダーの一覧を取る。
 // Smart Card サービスが動いていない・リーダーが無い機械でも通る (エラーなら返り値の形で出る)。
 func TestSystemWinscardLists(t *testing.T) {

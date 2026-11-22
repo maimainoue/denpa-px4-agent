@@ -649,7 +649,7 @@ Linux の pcscd には、pcsc-lite の socket (`/run/pcscd/pcscd.comm`。`PCSCLI
 
 **Windows の PC/SC の DLL は 1 つに限りません。** 既定は System32 の `winscard.dll` で、環境変数 `WINSCARD_DLLS` に絶対パスを `;` で区切って書くと、そのあとに足します。
 
-- DLL は絶対パスで読みます。探し場所は、その DLL の隣とシステムの場所に絞り (`LOAD_LIBRARY_SEARCH_DEFAULT_DIRS` と `LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR`)、カレントディレクトリと `PATH` は見ません。相対パスは起動時に断ります (終了コード 2)。同じパス (大文字小文字を区別しない) は 1 つにします
+- DLL は絶対パスで読みます。依存する DLL の探し場所は、その DLL の隣と System32 に絞り (`LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR` と `LOAD_LIBRARY_SEARCH_SYSTEM32`)、カレントディレクトリ・`PATH`・エージェント自身のフォルダは見ません。`/` 区切りで書いても、読むときに `\` に直します。相対パスは起動時に断ります (終了コード 2)。同じパス (大文字小文字を区別しない) は 1 つにします
 - DLL ごとに別の PC/SC の世界 (context) です。リーダーは DLL の順に並べ、**同じ名前が複数の DLL に出たら先の DLL のものだけ**を使い、そのリーダーはその DLL で開きます
 - 読めない DLL (無い・ロードできない・関数が足りない) は、パスと理由をログに 1 度だけ出し (同じ理由が続くあいだ)、ほかの DLL と経路は止めません。次に探し直すときにまた読みに行きます。全部の DLL が失敗したときだけ、経路ごと失敗として `/denpa/card` の `message` に出します
 

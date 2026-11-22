@@ -36,13 +36,15 @@ type dll struct {
 	establish, release, listReaders, connect, transmit, disconnect uintptr
 }
 
-// LoadDLL は絶対パスの DLL を読む。DLL の探し場所は、そのファイルの隣とシステムの場所だけに絞る
-// (カレントディレクトリや PATH から差し替えられない)。
+// LoadDLL は絶対パスの DLL を読む。依存する DLL の探し場所は、そのファイルの隣と System32 だけに絞る
+// (カレントディレクトリ・PATH・エージェント自身のフォルダから差し替えられない)。
 func LoadDLL(path string) (API, error) {
 	if !filepath.IsAbs(path) {
 		return nil, fmt.Errorf("絶対パスにします (%s)", path)
 	}
-	h, err := windows.LoadLibraryEx(path, 0, windows.LOAD_LIBRARY_SEARCH_DEFAULT_DIRS|windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)
+	// LoadLibraryEx は `\` 区切りを求める。設定に `/` で書かれていても読めるように直す (設定の表記は変えない)。
+	path = filepath.Clean(path)
+	h, err := windows.LoadLibraryEx(path, 0, windows.LOAD_LIBRARY_SEARCH_SYSTEM32|windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)
 	if err != nil {
 		return nil, err
 	}
