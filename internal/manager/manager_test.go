@@ -92,7 +92,18 @@ type rig struct {
 	mu     sync.Mutex
 }
 
+// laxTuner は番号の範囲を見ずに選局コマンドに任せる機種 (cmd) の代わり。
+type laxTuner struct{ *fakeTuner }
+
+func (laxTuner) LaxChannels() bool { return true }
+
 func newRig(t *testing.T, specs ...backend.TunerSpec) *rig {
+	t.Helper()
+	return newRigWith(t, func(ft *fakeTuner) backend.Tuner { return ft }, specs...)
+}
+
+// newRigWith は wrap で機種ごとに包む (lax にするものを選ぶ)。
+func newRigWith(t *testing.T, wrap func(*fakeTuner) backend.Tuner, specs ...backend.TunerSpec) *rig {
 	t.Helper()
 	r := &rig{tuners: map[string]*fakeTuner{}}
 	r.m = New(Config{
@@ -104,7 +115,7 @@ func newRig(t *testing.T, specs ...backend.TunerSpec) *rig {
 		Open: func(spec backend.TunerSpec) (backend.Tuner, error) {
 			ft := &fakeTuner{name: spec.Name, types: spec.Types}
 			r.tuners[spec.Name] = ft
-			return ft, nil
+			return wrap(ft), nil
 		},
 		Grace:   150 * time.Millisecond,
 		FirstTS: 2 * time.Second,
@@ -535,3 +546,43 @@ func TestNoLockErr_選局コマンドの理由を添える(t *testing.T) {
 	}
 }
 
+func TestOpen_範囲外のチャンネルは範囲を見ない機種にだけ渡し_既存の録画を切らない(t *testing.T) {
+	// px4 の機材のように範囲を見る機種しかないとき、範囲外 (T99) は録画を取り上げる前に 400 で断る
+	r := newRig(t, spec("A", "GR"))
+	rec := open(t, r.m, "GR", "T27", 5, "rec 1")
+	readOne(t, rec)
+
+	for _, req := range []Request{
+		{Type: "GR", Channel: "T99", Priority: 11, Use: "rec 2"},
+		{Type: "GR", Channel: "T99", Priority: 11, Use: "rec 3", Pin: "A"},
+	} {
+		_, err := r.m.Open(req)
+		if backend.StatusOf(err) != 400 || !strings.Contains(err.Error(), "チャンネル名を読めません") {
+			t.Errorf("%+v: %v", req, err)
+		}
+	}
+	if n := r.tuners["A"].tunes.Load(); n != 1 {
+		t.Errorf("選局し直してしまった: %d 回", n)
+	}
+	if err := readErrNonBlocking(rec); err != nil {
+		t.Errorf("録画が切られた: %v", err)
+	}
+}
+
+func TestOpen_範囲外のチャンネルは範囲を見ない機種で選局する(t *testing.T) {
+	// 範囲を見る A と、見ない B。範囲外の T99 は B で選局し、A には触れない
+	r := newRigWith(t, func(ft *fakeTuner) backend.Tuner {
+		if ft.name == "B" {
+			return laxTuner{ft}
+		}
+		return ft
+	}, spec("A", "GR"), spec("B", "GR"))
+	s := open(t, r.m, "GR", "T99", 5, "epg T99")
+	readOne(t, s)
+	if a, b := r.tuners["A"].tunes.Load(), r.tuners["B"].tunes.Load(); a != 0 || b != 1 {
+		t.Errorf("A=%d B=%d, want A=0 B=1", a, b)
+	}
+	// 範囲の中は、今までどおりどちらでも選局できる
+	s2 := open(t, r.m, "GR", "T27", 5, "epg T27")
+	readOne(t, s2)
+}

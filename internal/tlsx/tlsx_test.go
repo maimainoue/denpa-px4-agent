@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -78,5 +79,41 @@ func TestRejectUnpaired_組む方法を案内する(t *testing.T) {
 	RejectUnpaired(w)
 	if w.Code != 403 || !strings.Contains(w.Body.String(), "#pair=") || !strings.Contains(w.Body.String(), `"paired":false`) {
 		t.Errorf("%d %s", w.Code, w.Body)
+	}
+}
+
+func TestHandlePair_保存に失敗したら組んだことにせず_直して再送すれば記録が出る(t *testing.T) {
+	var logs []string
+	dir := t.TempDir()
+	id, err := Load(dir, strings.Repeat("t", 40), func(f string, a ...any) {
+		logs = append(logs, fmt.Sprintf(f, a...))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1, fp1 := newClientCert(t)
+
+	// 保存先を壊して、書けないようにする
+	id.dir = filepath.Join(dir, "gone", "deeper")
+	if w := pairRequest(t, id, c1, fp1); w.Code != 500 {
+		t.Fatalf("保存に失敗したのに %d", w.Code)
+	}
+	if id.Paired(fp1) {
+		t.Error("書けなかったのに組んだことになっている")
+	}
+	if len(logs) != 0 {
+		t.Errorf("書けなかったのに記録が出た: %q", logs)
+	}
+
+	// 直して再送する。新しく組んだ記録が出る
+	id.dir = dir
+	if w := pairRequest(t, id, c1, fp1); w.Code != 200 {
+		t.Fatalf("再送 = %d", w.Code)
+	}
+	if !id.Paired(fp1) {
+		t.Error("再送しても組めていない")
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], fp1[:16]) {
+		t.Errorf("logs = %q", logs)
 	}
 }

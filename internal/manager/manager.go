@@ -72,6 +72,11 @@ type Request struct {
 	After    []string
 	Pin      string
 	Service  int
+
+	// rangeErr は、チャンネル番号が範囲の外のときの理由 (Open が決める)。空なら範囲の中。
+	// 範囲外の選局は、番号の範囲を見ない機種 (cmd) にだけ渡す。px4 の機材に渡すと、
+	// 先に既存の利用者を取り上げてから 400 になってしまう
+	rangeErr string
 }
 
 // Tuner はチューナー 1 つ。
@@ -228,6 +233,17 @@ func (t *Tuner) receivable() []string {
 
 func (t *Tuner) eligible(typ string) bool {
 	return !t.spec.Disabled && t.be != nil && contains(t.spec.Types, typ) && contains(t.receivable(), typ)
+}
+
+// laxChannels は番号の範囲を見ずに選局コマンドに任せる機種か (cmd)。
+func (t *Tuner) laxChannels() bool {
+	l, ok := t.be.(backend.LaxChannelser)
+	return ok && l.LaxChannels()
+}
+
+// eligibleFor は eligible に加えて、範囲外のチャンネルなら範囲を見ない機種だけを通す。
+func (t *Tuner) eligibleFor(req Request) bool {
+	return t.eligible(req.Type) && (req.rangeErr == "" || t.laxChannels())
 }
 
 func (t *Tuner) isSingle() bool {
@@ -426,6 +442,13 @@ func (m *Manager) Open(req Request) (*Sink, error) {
 		return nil, statusErr(400, "%s: type と channel が合いません", req.Channel)
 	}
 	req.Channel = ch.String()
+	// 厳密な Parse が断る範囲外は、範囲を見ない機種 (cmd) にだけ渡す。候補が無ければ、ここで 400
+	if _, serr := channel.Parse(req.Channel); serr != nil {
+		req.rangeErr = serr.Error()
+		if !m.anyLax(req.Type) {
+			return nil, statusErr(400, "%s", req.rangeErr)
+		}
+	}
 	if req.Use == "" {
 		req.Use = "不明"
 	}
@@ -460,6 +483,18 @@ func (m *Manager) Open(req Request) (*Sink, error) {
 	}
 }
 
+// anyLax は、この種別を受けられて、範囲を見ない (cmd) チューナーがあるか。
+func (m *Manager) anyLax(typ string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, t := range m.tuners {
+		if t.eligible(typ) && t.laxChannels() {
+			return true
+		}
+	}
+	return false
+}
+
 func (m *Manager) acquire(req Request, exclude []string, onlyGroup string) (*Sink, *Lease, *Tuner, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -488,6 +523,9 @@ func (m *Manager) acquire(req Request, exclude []string, onlyGroup string) (*Sin
 		if !t.eligible(req.Type) {
 			return nil, nil, nil, statusErr(400, "%s: %s は受けられません", t.spec.Name, req.Type)
 		}
+		if req.rangeErr != "" && !t.laxChannels() {
+			return nil, nil, nil, statusErr(400, "%s", req.rangeErr)
+		}
 		if l := t.lease; l != nil && !l.dead && l.matches(req, req.Channel) {
 			return m.join(l, req), l, t, nil
 		}
@@ -501,7 +539,7 @@ func (m *Manager) acquire(req Request, exclude []string, onlyGroup string) (*Sin
 	// 同じ種別・同じチャンネルの選局を共有する (優先度が同じか高い相手がいるとき)
 	for _, t := range m.tuners {
 		l := t.lease
-		if l == nil || !t.eligible(req.Type) || !l.matches(req, req.Channel) {
+		if l == nil || !t.eligibleFor(req) || !l.matches(req, req.Channel) {
 			continue
 		}
 		if p, ok := l.maxPrio(after); ok && p >= req.Priority {
@@ -519,7 +557,7 @@ func (m *Manager) acquire(req Request, exclude []string, onlyGroup string) (*Sin
 		}
 		var members, back []*Tuner
 		for _, t := range g.members {
-			if contains(exclude, t.spec.Name) || !t.eligible(req.Type) {
+			if contains(exclude, t.spec.Name) || !t.eligibleFor(req) {
 				continue
 			}
 			if at, bad := t.failed[chKey]; bad && time.Since(at) < failedFor {

@@ -544,3 +544,32 @@ func TestTscCounter_塊の境目をまたいでも数える(t *testing.T) {
 		t.Errorf("n = %d, want 2", c.n)
 	}
 }
+
+func TestTscCounter_先頭にごみがあっても復号側と同じ境目で数える(t *testing.T) {
+	scrambled := make([]byte, 188)
+	scrambled[0], scrambled[3] = 0x47, 0x80
+	clear := make([]byte, 188)
+	clear[0], clear[3] = 0x47, 0x10
+	aligned := bytes.Repeat(append(append([]byte(nil), scrambled...), clear...), 5) // スクランブル 5、そうでない 5
+	junk := append([]byte{0x00, 0x13, 0x37}, aligned...)                             // 先頭に 3 バイトのごみ
+
+	count := func(in []byte, step int) int64 {
+		var c tscCounter
+		for i := 0; i < len(in); i += step {
+			end := i + step
+			if end > len(in) {
+				end = len(in)
+			}
+			c.add(in[i:end])
+		}
+		return c.n
+	}
+	for _, step := range []int{len(junk), 188 * 3, 100, 7} { // 塊の切り方に依らない
+		if got := count(aligned, step); got != 5 {
+			t.Errorf("整列済み (塊 %d): %d, want 5", step, got)
+		}
+		if got := count(junk, step); got != 5 {
+			t.Errorf("先頭にごみ (塊 %d): %d, want 5", step, got)
+		}
+	}
+}

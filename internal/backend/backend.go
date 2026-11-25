@@ -71,6 +71,10 @@ type DecryptedByDevicer interface{ DecryptedByDevice() bool }
 // SingleServicer は 1 サービスしか出ない機材 (6.4)。
 type SingleServicer interface{ SingleService() bool }
 
+// LaxChannelser はチャンネル番号の範囲を見ずに、選局コマンドに任せるバックエンド (cmd)。
+// 範囲外のチャンネルは、これを持たない機材 (px4 の chardev・host。選局の値を計算する) には渡さない。
+type LaxChannelser interface{ LaxChannels() bool }
+
 // Passthroughers は復号の経路を通さずに流す機材 (FAKE_TUNE)。
 type Passthroughers interface{ Passthrough() bool }
 

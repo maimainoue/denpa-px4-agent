@@ -204,6 +204,10 @@ func (id *Identity) HandlePair(w http.ResponseWriter, r *http.Request) {
 	id.clients[req.Client] = true
 	count := len(id.clients)
 	err = id.save()
+	if err != nil && added {
+		// 書けなかったのに「組んだ」ことにしない。残すと、保存先を直した再送で added が偽になり、記録が出ない
+		delete(id.clients, req.Client)
+	}
 	id.mu.Unlock()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": "clients を書けません: " + err.Error()})

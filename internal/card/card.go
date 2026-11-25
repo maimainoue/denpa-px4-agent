@@ -4,6 +4,7 @@
 package card
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -890,24 +891,32 @@ func (m *Manager) decodeFailReason() string {
 }
 
 // tscCounter は TS の流れの中で、transport_scrambling_control が立っているパケットを数える。
-// 188 バイトごとに区切られた TS 前提で、先頭が 0x47 でないパケットは数えない。
+// パケットの境目の探し方は b25.Stream.Process と同じ (先頭の余分なバイトを飛ばし、188 バイト先も 0x47 のものを境目とする)。
+// 入力の数え方が復号側とずれると、先頭にごみのある録画で、復号できた数が 0 になってしまう。
 type tscCounter struct {
-	rest []byte // 前の塊の端数 (188 バイトに満たない分)
-	n    int64
+	buf []byte // 前の塊の端数 (188 バイトに満たない分)
+	n   int64
 }
 
 func (c *tscCounter) add(b []byte) {
-	if len(c.rest) > 0 {
-		b = append(append([]byte(nil), c.rest...), b...)
-		c.rest = nil
-	}
-	for len(b) >= 188 {
-		if b[0] == 0x47 && b[3]&0xC0 != 0 {
+	c.buf = append(c.buf, b...)
+	pos := 0
+	for len(c.buf)-pos >= 188 {
+		if c.buf[pos] != 0x47 || (len(c.buf)-pos > 188 && c.buf[pos+188] != 0x47) {
+			i := bytes.IndexByte(c.buf[pos+1:], 0x47)
+			if i < 0 {
+				pos = len(c.buf)
+				break
+			}
+			pos += 1 + i
+			continue
+		}
+		if c.buf[pos+3]&0xC0 != 0 {
 			c.n++
 		}
-		b = b[188:]
+		pos += 188
 	}
-	c.rest = append([]byte(nil), b...)
+	c.buf = append(c.buf[:0], c.buf[pos:]...)
 }
 
 // NewTLVStream は 4K (MMT/TLV) の選局ごとの復号を作る (docs/b61.md)。

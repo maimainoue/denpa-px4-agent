@@ -51,6 +51,9 @@ func (t *tuner) DecryptedByDevice() bool { return t.def.DecryptedByDevice }
 // Passthrough は FAKE_TUNE の機種。適合テストの TS は PSI を持たないので、復号を通さない。
 func (t *tuner) Passthrough() bool { return t.def.Model == devices.ModelFake }
 
+// LaxChannels は、番号の範囲を見ずに選局コマンドに任せる (B1)。
+func (t *tuner) LaxChannels() bool { return true }
+
 // SingleService は 1 サービスしか出ない機材か (6.4)。
 func (t *tuner) SingleService() bool { return t.def.SingleService }
 
