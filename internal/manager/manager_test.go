@@ -501,3 +501,18 @@ func TestPump_小さい読みの塊は大きな配列を抱え込まない(t *te
 		t.Errorf("len=%d cap=%d。読めたぶんより大きな配列を抱えている", len(b), cap(b))
 	}
 }
+
+func TestSnapshot_利用者は繋いだ順に並ぶ(t *testing.T) {
+	// 利用名の辞書順 (epg < rec) とは逆に繋ぐ。並びは繋いだ順 (適合テスト)
+	r := newRig(t, spec("A", "GR"))
+	s1 := open(t, r.m, "GR", "T27", 10, "rec 1")
+	s2 := open(t, r.m, "GR", "T27", 3, "epg T27")
+	readOne(t, s1)
+	readOne(t, s2)
+	for i := 0; i < 20; i++ { // map の走査順に頼っていないこと
+		snap := r.m.Snapshot()
+		if len(snap[0].Users) != 2 || snap[0].Users[0].Use != "rec 1" || snap[0].Users[1].Use != "epg T27" {
+			t.Fatalf("users = %+v, want rec 1 → epg T27", snap[0].Users)
+		}
+	}
+}

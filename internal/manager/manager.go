@@ -120,6 +120,7 @@ type Sink struct {
 	lease    *Lease
 	m        *Manager
 	killMsg  string
+	seq      uint64 // 繋いだ順 (/denpa/tuners の users の並び)
 }
 
 // Read は次の塊。正常に閉じたら io.EOF、壊すなら ErrKilled。
@@ -150,6 +151,7 @@ type Manager struct {
 	groups   []*group
 	detected bool
 	closed   bool
+	sinkSeq  uint64 // join のたびに進める (m.mu で守る)
 }
 
 type group struct {
@@ -566,6 +568,8 @@ func (m *Manager) acquire(req Request, exclude []string, onlyGroup string) (*Sin
 // join は選局に利用者を足す。m.mu を持って呼ぶ。
 func (m *Manager) join(l *Lease, req Request) *Sink {
 	s := &Sink{Use: req.Use, Priority: req.Priority, keyed: !keyless(req.Use), q: newByteq(m.cfg.SinkLimit), lease: l, m: m}
+	m.sinkSeq++
+	s.seq = m.sinkSeq
 	l.users[s] = struct{}{}
 	if l.graceTimer != nil {
 		l.graceTimer.Stop()
@@ -950,10 +954,14 @@ func (m *Manager) Snapshot() []TunerView {
 		}
 		if l := t.lease; l != nil && !l.dead {
 			v.Channel = &ChannelView{Type: l.typ, Channel: l.channel}
+			ordered := make([]*Sink, 0, len(l.users))
 			for s := range l.users {
+				ordered = append(ordered, s)
+			}
+			sort.Slice(ordered, func(a, b int) bool { return ordered[a].seq < ordered[b].seq })
+			for _, s := range ordered {
 				v.Users = append(v.Users, UserView{Use: s.Use, Priority: s.Priority})
 			}
-			sort.Slice(v.Users, func(a, b int) bool { return v.Users[a].Use < v.Users[b].Use })
 			if len(l.users) > 0 && l.signal != nil {
 				sig := *l.signal
 				v.Signal = &sig

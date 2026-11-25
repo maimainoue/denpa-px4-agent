@@ -214,7 +214,7 @@ func (s *Server) events(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(200)
-	w.Write([]byte(": ok\n\n"))
+	// ヘッダだけ先に送る (本文は最初の通知まで空)。最初の読み取りが通知になる
 	rc.Flush()
 	ch, cancel := s.d.Hub.Subscribe()
 	defer cancel()
@@ -489,12 +489,12 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) {
 	}
 	in, err := s.rawPath(body.Input)
 	if err != nil {
-		fail(w, 400, "input: %v", err)
+		fail(w, 500, "input: %v", err)
 		return
 	}
 	out, err := s.rawPath(body.Output)
 	if err != nil {
-		fail(w, 400, "output: %v", err)
+		fail(w, 500, "output: %v", err)
 		return
 	}
 	if _, err := os.Lstat(out); err == nil {
@@ -518,7 +518,7 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request) {
 // rawPath は置き場からの相対パスを絶対にする。置き場の外・リンク・`..` は断る。
 func (s *Server) rawPath(rel string) (string, error) {
 	if filepath.IsAbs(rel) || strings.Contains(filepath.ToSlash(rel), "..") {
-		return "", errors.New("置き場からの相対パスにします")
+		return "", errors.New("保存先の外は使えません (置き場からの相対パスにします)")
 	}
 	root, err := filepath.Abs(s.d.Cfg.RawDir)
 	if err != nil {
@@ -526,7 +526,7 @@ func (s *Server) rawPath(rel string) (string, error) {
 	}
 	p := filepath.Join(root, filepath.FromSlash(rel))
 	if p != root && !strings.HasPrefix(p, root+string(filepath.Separator)) {
-		return "", errors.New("置き場の外です")
+		return "", errors.New("保存先の外です")
 	}
 	// 途中にリンクがあれば断る
 	cur := root
