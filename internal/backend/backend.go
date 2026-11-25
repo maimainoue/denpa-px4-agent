@@ -110,3 +110,25 @@ func StatusOf(err error) int {
 	}
 	return 500
 }
+
+// NoLockError は ErrNoLock に、選局コマンドが出した理由 (標準エラーの最後の行) を添えたもの。
+// errors.Is(err, ErrNoLock) は真のまま。文言は ErrNoLock のあとに理由が続く
+// (denpa は「同期しませんでした」を含むかで見るので、後ろに足しても読める)。
+type NoLockError struct {
+	Name   string // チューナーの名前 (空なら付けない)
+	Reason string
+}
+
+func (e *NoLockError) Error() string {
+	head := ErrNoLock.Error()
+	if e.Name != "" {
+		head = e.Name + ": " + head
+	}
+	if e.Reason == "" {
+		return head
+	}
+	return head + ": " + e.Reason
+}
+
+func (e *NoLockError) Unwrap() error { return ErrNoLock }
+

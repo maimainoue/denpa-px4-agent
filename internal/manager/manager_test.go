@@ -516,3 +516,22 @@ func TestSnapshot_利用者は繋いだ順に並ぶ(t *testing.T) {
 		}
 	}
 }
+
+func TestNoLockErr_選局コマンドの理由を添える(t *testing.T) {
+	err := noLockErr([]string{"gr0", "gr1"}, "Cannot tune to T99: no signal")
+	if !errors.Is(err, backend.ErrNoLock) {
+		t.Fatalf("ErrNoLock のはず: %v", err)
+	}
+	want := "gr0・gr1: 同期しませんでした (電波が来ていないか、その周波数に放送がありません): Cannot tune to T99: no signal"
+	if err.Error() != want {
+		t.Errorf("文言 %q", err.Error())
+	}
+	if got := noLockReason(err); got != "Cannot tune to T99: no signal" {
+		t.Errorf("reason = %q", got)
+	}
+	// 理由が無ければ、今までの文言のまま
+	if got := noLockErr([]string{"gr0"}, "").Error(); got != "gr0: 同期しませんでした (電波が来ていないか、その周波数に放送がありません)" {
+		t.Errorf("文言 %q", got)
+	}
+}
+

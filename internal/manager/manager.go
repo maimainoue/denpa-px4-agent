@@ -399,8 +399,17 @@ func busyErr(typ string) error {
 	return &backend.StatusError{Code: 409, Msg: typ + " のチューナーに空きがありません", Err: backend.ErrBusy}
 }
 
-func noLockErr(names []string) error {
-	return fmt.Errorf("%s: %w", strings.Join(names, "・"), backend.ErrNoLock)
+func noLockErr(names []string, reason string) error {
+	return &backend.NoLockError{Name: strings.Join(names, "・"), Reason: reason}
+}
+
+// noLockReason は同期しなかった失敗に添えられた理由 (選局コマンドの標準エラー)。
+func noLockReason(err error) string {
+	var nl *backend.NoLockError
+	if errors.As(err, &nl) {
+		return nl.Reason
+	}
+	return ""
 }
 
 // Open は選局して、最初の TS が届くまで待つ。
@@ -408,7 +417,8 @@ func (m *Manager) Open(req Request) (*Sink, error) {
 	if req.Type == "" || req.Channel == "" {
 		return nil, statusErr(400, "type と channel が必要です")
 	}
-	ch, err := channel.Parse(req.Channel)
+	// 番号の範囲は、機種ごとに見る (px4 の機材は選局の値を計算するので 400、cmd は選局コマンドに任せる)
+	ch, err := channel.ParseLax(req.Channel)
 	if err != nil {
 		return nil, statusErr(400, "%s", err.Error())
 	}
@@ -422,11 +432,12 @@ func (m *Manager) Open(req Request) (*Sink, error) {
 
 	var tried []string
 	onlyGroup := ""
+	reason := "" // 最後に同期しなかった選局の理由
 	for {
 		sink, l, t, err := m.acquire(req, tried, onlyGroup)
 		if err != nil {
 			if len(tried) > 0 {
-				return nil, noLockErr(tried)
+				return nil, noLockErr(tried, reason)
 			}
 			return nil, err
 		}
@@ -438,8 +449,9 @@ func (m *Manager) Open(req Request) (*Sink, error) {
 			return nil, l.err
 		}
 		tried = append(tried, t.spec.Name)
+		reason = noLockReason(l.err)
 		if req.Pin != "" || isScan(req.Use) || len(tried) >= maxRetriesPerSelection {
-			return nil, noLockErr(tried)
+			return nil, noLockErr(tried, reason)
 		}
 		m.cfg.Log("[%s] %s: 同期しなかったので同じ組の別のチューナーで選局し直します", t.spec.Name, req.Channel)
 		m.mu.Lock()

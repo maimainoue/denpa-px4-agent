@@ -73,8 +73,14 @@ func unreadable(input string) *Error {
 	return &Error{Msg: input + ": チャンネル名を読めません"}
 }
 
-// Parse はチャンネル名を読む。大文字小文字は区別しない。
-func Parse(input string) (Channel, error) {
+// Parse はチャンネル名を読む。大文字小文字は区別しない。番号の範囲も見る (選局の値を計算する機材のため)。
+func Parse(input string) (Channel, error) { return parse(input, true) }
+
+// ParseLax は Parse と同じ決まりのうち、番号の範囲だけ見ない (添え字・BS/CS の偶奇・BS07/BS17 は断る)。
+// 選局コマンドに任せる機種 (cmd バックエンド) のため。範囲外のチャンネルは、コマンドが失敗して 500 になる。
+func ParseLax(input string) (Channel, error) { return parse(input, false) }
+
+func parse(input string, strict bool) (Channel, error) {
 	name := strings.ToUpper(strings.TrimSpace(input))
 	m := pattern.FindStringSubmatch(name)
 	if m == nil {
@@ -87,7 +93,7 @@ func Parse(input string) (Channel, error) {
 		suffix, _ = strconv.Atoi(m[3])
 	}
 
-	inRange := func(lo, hi int) bool { return num >= lo && num <= hi }
+	inRange := func(lo, hi int) bool { return !strict || num >= lo && num <= hi }
 	switch c.Prefix {
 	case "T":
 		c.Type = GR
