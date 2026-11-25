@@ -916,7 +916,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 | `PX4_RUNTIME_DIR`                                                             | `/tmp`                                                         | macOS の DriverHost_PX4 の socket の置き場                                                         |
 | `DRIVER_HOST_PATH`                                                            | 実行ファイルの隣の `DriverHost_PX4.exe`                        | Windows で DriverHost_PX4 を起動するときのパス                                                     |
 | `DRIVER_HOST_INI`                                                             | `DRIVER_HOST_PATH` の隣の `DriverHost_PX4.ini`                 | Windows と macOS で、機材の定義 (`DeviceInterfaceGUID`・`VendorId`・`ProductId`・受信機) を読む元   |
-| `FAKE_TUNE`                                                                   | (空)                                                           | 偽の選局 (適合テスト)。`cmd` バックエンドの組み込みの機種 `fake` として扱う ([6.3](#63-選局の流れ)、[17](#17-テスト)) |
+| `FAKE_TUNE`                                                                   | (空)                                                           | 偽の選局 (適合テスト)。`bun <スクリプト>` のような引数つきのコマンドラインでもよく、空白で分ける (値そのものが存在するファイルなら分けない)。`cmd` バックエンドの組み込みの機種 `fake` として扱う ([6.3](#63-選局の流れ)、[17](#17-テスト)) |
 | `FAKE_CARD`                                                                   | (空)                                                           | 試験カード。`1` のときだけ、APDU に固定の答えを返す試験カード (リーダー名 `fake`) を使います。`-tags fakecard` で組んだときだけ有効です。起動ログと `GET /denpa/card` には `fake` と出ます。本物のカードと間違えないこと ([9.1](#91-カードリーダー)、[17](#17-テスト)) |
 
 読めない値は既定に戻さず、理由を出して終了コード 2 で止まります。

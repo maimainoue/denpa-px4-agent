@@ -204,3 +204,35 @@ func TestBuiltin_nasneの生のTS(t *testing.T) {
 		t.Error("B-CAS ありの nasne の定義と区別できない")
 	}
 }
+
+func TestFake_FAKE_TUNEは引数つきのコマンドラインも受ける(t *testing.T) {
+	// 適合テストは `bun <スクリプト>` を渡す。空白で分けて、種別とチャンネル名を足す
+	got := Fake("bun /x/tune.ts").Command
+	want := []string{"bun", "/x/tune.ts", "{type}", "{channel}"}
+	if len(got) != len(want) {
+		t.Fatalf("Command = %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("Command[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// 1 語ならそのまま
+	if got := Fake("/fake").Command; len(got) != 3 || got[0] != "/fake" {
+		t.Errorf("Command = %q", got)
+	}
+
+	// 値そのものが存在するファイルなら (空白を含むパス)、分けない
+	dir := t.TempDir() + "/with space"
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := dir + "/tune"
+	if err := os.WriteFile(exe, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := Fake(exe).Command; len(got) != 3 || got[0] != exe {
+		t.Errorf("空白を含むパスを分けました: %q", got)
+	}
+}
