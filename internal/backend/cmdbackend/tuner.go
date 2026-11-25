@@ -51,6 +51,9 @@ func (t *tuner) DecryptedByDevice() bool { return t.def.DecryptedByDevice }
 // Passthrough は FAKE_TUNE の機種。適合テストの TS は PSI を持たないので、復号を通さない。
 func (t *tuner) Passthrough() bool { return t.def.Model == devices.ModelFake }
 
+// LaxChannels は、番号の範囲を見ずに選局コマンドに任せる (B1)。
+func (t *tuner) LaxChannels() bool { return true }
+
 // SingleService は 1 サービスしか出ない機材か (6.4)。
 func (t *tuner) SingleService() bool { return t.def.SingleService }
 
@@ -60,7 +63,7 @@ func (t *tuner) Receivable() []string { return t.def.Receivable() }
 // plan は選局の要求を検査して引数にする。機材に触る前の 400 はここで返す (7.2)。
 func (t *tuner) plan(tn backend.Tuning) (typ string, args []string, err error) {
 	name := t.spec.Name
-	ch, perr := channel.Parse(tn.Channel)
+	ch, perr := channel.ParseLax(tn.Channel)
 	if perr != nil {
 		return "", nil, backend.BadRequest("%s", perr.Error())
 	}
@@ -176,7 +179,16 @@ func (t *tuner) startSession(args []string) (*session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: パイプを作れません (%v)", t.spec.Name, err)
 	}
-	lw := &lineWriter{emit: func(line string) { t.logf("%s", line) }}
+	s := &session{
+		grace:   t.b.cfg.StopGrace,
+		firstCh: make(chan firstResult, 1),
+		done:    make(chan struct{}),
+		abort:   make(chan struct{}),
+	}
+	lw := &lineWriter{emit: func(line string) {
+		t.logf("%s", line)
+		s.setLastErr(line)
+	}}
 	cmd.Stdout = pw
 	cmd.Stderr = lw
 	if err := cmd.Start(); err != nil {
@@ -186,14 +198,7 @@ func (t *tuner) startSession(args []string) (*session, error) {
 	}
 	pw.Close() // 子だけが書く。子が終われば読みが EOF になる
 
-	s := &session{
-		cmd:     cmd,
-		r:       pr,
-		grace:   t.b.cfg.StopGrace,
-		firstCh: make(chan firstResult, 1),
-		done:    make(chan struct{}),
-		abort:   make(chan struct{}),
-	}
+	s.cmd, s.r = cmd, pr
 	go func() {
 		err := cmd.Wait()
 		lw.flush()
@@ -266,7 +271,31 @@ func (t *tuner) exited(s *session, typ string) error {
 			Err:  backend.ErrBusy,
 		}
 	}
+	if reason := s.stderrReason(); reason != "" {
+		return &backend.NoLockError{Name: t.spec.Name, Reason: reason}
+	}
 	return fmt.Errorf("%s: %w", t.spec.Name, backend.ErrNoLock)
+}
+
+// setLastErr は子の標準エラーの行を覚える (空行は飛ばし、長いものは切る)。
+func (s *session) setLastErr(line string) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return
+	}
+	if r := []rune(line); len(r) > 200 {
+		line = string(r[:200]) + "…"
+	}
+	s.errMu.Lock()
+	s.lastErr = line
+	s.errMu.Unlock()
+}
+
+// stderrReason は子が最後に標準エラーへ書いた行。
+func (s *session) stderrReason() string {
+	s.errMu.Lock()
+	defer s.errMu.Unlock()
+	return s.lastErr
 }
 
 // Start は選局した TS の読み出しを返す。Close は読み出しを閉じるだけで、子プロセスは Stop で止める。
@@ -346,6 +375,9 @@ type session struct {
 	firstCh chan firstResult
 	done    chan struct{} // 子が終わったら閉じる。閉じる前に waitErr を書く
 	waitErr error
+
+	errMu   sync.Mutex
+	lastErr string // 子の標準エラーの最後の行 (TS が出る前に終わったとき、理由に付ける)
 	abort   chan struct{}
 
 	abortOnce sync.Once

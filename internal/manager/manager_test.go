@@ -92,7 +92,18 @@ type rig struct {
 	mu     sync.Mutex
 }
 
+// laxTuner は番号の範囲を見ずに選局コマンドに任せる機種 (cmd) の代わり。
+type laxTuner struct{ *fakeTuner }
+
+func (laxTuner) LaxChannels() bool { return true }
+
 func newRig(t *testing.T, specs ...backend.TunerSpec) *rig {
+	t.Helper()
+	return newRigWith(t, func(ft *fakeTuner) backend.Tuner { return ft }, specs...)
+}
+
+// newRigWith は wrap で機種ごとに包む (lax にするものを選ぶ)。
+func newRigWith(t *testing.T, wrap func(*fakeTuner) backend.Tuner, specs ...backend.TunerSpec) *rig {
 	t.Helper()
 	r := &rig{tuners: map[string]*fakeTuner{}}
 	r.m = New(Config{
@@ -104,7 +115,7 @@ func newRig(t *testing.T, specs ...backend.TunerSpec) *rig {
 		Open: func(spec backend.TunerSpec) (backend.Tuner, error) {
 			ft := &fakeTuner{name: spec.Name, types: spec.Types}
 			r.tuners[spec.Name] = ft
-			return ft, nil
+			return wrap(ft), nil
 		},
 		Grace:   150 * time.Millisecond,
 		FirstTS: 2 * time.Second,
@@ -500,4 +511,78 @@ func TestPump_小さい読みの塊は大きな配列を抱え込まない(t *te
 	if len(b) == 0 || cap(b) > 4*len(b) {
 		t.Errorf("len=%d cap=%d。読めたぶんより大きな配列を抱えている", len(b), cap(b))
 	}
+}
+
+func TestSnapshot_利用者は繋いだ順に並ぶ(t *testing.T) {
+	// 利用名の辞書順 (epg < rec) とは逆に繋ぐ。並びは繋いだ順 (適合テスト)
+	r := newRig(t, spec("A", "GR"))
+	s1 := open(t, r.m, "GR", "T27", 10, "rec 1")
+	s2 := open(t, r.m, "GR", "T27", 3, "epg T27")
+	readOne(t, s1)
+	readOne(t, s2)
+	for i := 0; i < 20; i++ { // map の走査順に頼っていないこと
+		snap := r.m.Snapshot()
+		if len(snap[0].Users) != 2 || snap[0].Users[0].Use != "rec 1" || snap[0].Users[1].Use != "epg T27" {
+			t.Fatalf("users = %+v, want rec 1 → epg T27", snap[0].Users)
+		}
+	}
+}
+
+func TestNoLockErr_選局コマンドの理由を添える(t *testing.T) {
+	err := noLockErr([]string{"gr0", "gr1"}, "Cannot tune to T99: no signal")
+	if !errors.Is(err, backend.ErrNoLock) {
+		t.Fatalf("ErrNoLock のはず: %v", err)
+	}
+	want := "gr0・gr1: 同期しませんでした (電波が来ていないか、その周波数に放送がありません): Cannot tune to T99: no signal"
+	if err.Error() != want {
+		t.Errorf("文言 %q", err.Error())
+	}
+	if got := noLockReason(err); got != "Cannot tune to T99: no signal" {
+		t.Errorf("reason = %q", got)
+	}
+	// 理由が無ければ、今までの文言のまま
+	if got := noLockErr([]string{"gr0"}, "").Error(); got != "gr0: 同期しませんでした (電波が来ていないか、その周波数に放送がありません)" {
+		t.Errorf("文言 %q", got)
+	}
+}
+
+func TestOpen_範囲外のチャンネルは範囲を見ない機種にだけ渡し_既存の録画を切らない(t *testing.T) {
+	// px4 の機材のように範囲を見る機種しかないとき、範囲外 (T99) は録画を取り上げる前に 400 で断る
+	r := newRig(t, spec("A", "GR"))
+	rec := open(t, r.m, "GR", "T27", 5, "rec 1")
+	readOne(t, rec)
+
+	for _, req := range []Request{
+		{Type: "GR", Channel: "T99", Priority: 11, Use: "rec 2"},
+		{Type: "GR", Channel: "T99", Priority: 11, Use: "rec 3", Pin: "A"},
+	} {
+		_, err := r.m.Open(req)
+		if backend.StatusOf(err) != 400 || !strings.Contains(err.Error(), "チャンネル名を読めません") {
+			t.Errorf("%+v: %v", req, err)
+		}
+	}
+	if n := r.tuners["A"].tunes.Load(); n != 1 {
+		t.Errorf("選局し直してしまった: %d 回", n)
+	}
+	if err := readErrNonBlocking(rec); err != nil {
+		t.Errorf("録画が切られた: %v", err)
+	}
+}
+
+func TestOpen_範囲外のチャンネルは範囲を見ない機種で選局する(t *testing.T) {
+	// 範囲を見る A と、見ない B。範囲外の T99 は B で選局し、A には触れない
+	r := newRigWith(t, func(ft *fakeTuner) backend.Tuner {
+		if ft.name == "B" {
+			return laxTuner{ft}
+		}
+		return ft
+	}, spec("A", "GR"), spec("B", "GR"))
+	s := open(t, r.m, "GR", "T99", 5, "epg T99")
+	readOne(t, s)
+	if a, b := r.tuners["A"].tunes.Load(), r.tuners["B"].tunes.Load(); a != 0 || b != 1 {
+		t.Errorf("A=%d B=%d, want A=0 B=1", a, b)
+	}
+	// 範囲の中は、今までどおりどちらでも選局できる
+	s2 := open(t, r.m, "GR", "T27", 5, "epg T27")
+	readOne(t, s2)
 }

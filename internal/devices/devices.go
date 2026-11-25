@@ -174,11 +174,24 @@ func validType(t string) bool {
 	return false
 }
 
+// fakeCommand は FAKE_TUNE をコマンドにする。適合テストは `bun <スクリプト>` のように
+// 引数つきのコマンドラインを渡すので、空白で分ける。ただし、その値そのものが
+// 存在するファイルなら (空白を含むパス)、分けずに 1 つの実行ファイルとして扱う。
+func fakeCommand(s string) []string {
+	if _, err := os.Stat(s); err == nil {
+		return []string{s}
+	}
+	if f := strings.Fields(s); len(f) > 0 {
+		return f
+	}
+	return []string{s}
+}
+
 // Fake は FAKE_TUNE の機種。`<FAKE_TUNE> <種別> <チャンネル名>` を起動する (6.3)。
 func Fake(path string) Def {
 	return Def{
 		Model:         ModelFake,
-		Command:       []string{path, "{type}", "{channel}"},
+		Command:       append(fakeCommand(path), "{type}", "{channel}"),
 		ChannelFormat: FormatDenpa,
 		Receivers:     []Receiver{{Index: 0, Types: append([]string(nil), allTypes...)}},
 	}

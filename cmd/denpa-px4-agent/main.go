@@ -17,10 +17,11 @@ import (
 // version は -ldflags "-X main.version=…" で入れる。
 var version = "dev"
 
-const usage = `使い方: denpa-px4-agent [--version | --pair]
+const usage = `使い方: denpa-px4-agent [--version | --pair | --status]
   (無し)     サーバとして動く
   --version  バージョンを出して終わる
   --pair     組むときの URL を標準出力に出して終わる
+  --status   動いているエージェントの /denpa/tuners を出して終わる (繋がらなければ 1)
 `
 
 func main() {
@@ -37,7 +38,7 @@ func run(args []string) int {
 		mode = args[0]
 	}
 	switch mode {
-	case "", "--pair":
+	case "", "--pair", "--status":
 	case "--version":
 		fmt.Println(version)
 		return 0
@@ -49,8 +50,11 @@ func run(args []string) int {
 	exe, _ := os.Executable()
 	cfg, err := config.Load(os.Getenv, runtime.GOOS, exe)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Println(err)
 		return 2
+	}
+	if mode == "--status" {
+		return status(cfg)
 	}
 	log := logx.New(os.Stdout)
 	a, err := app.New(cfg, log)
@@ -68,8 +72,18 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	// 止まれの合図は 1 回目で畳み始め (録画が終わるまで待つ)、2 回目は待たずに終わる (仕様書 13)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	sig := make(chan os.Signal, 2)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		cancel()
+		<-sig
+		log.Printf("2 回目の止まれの合図を受けたので、待たずに終わります")
+		os.Exit(1)
+	}()
 
 	log.Printf("起動しました (%s, %s)", runtime.GOOS+"/"+runtime.GOARCH, ln.Addr())
 	if !a.ID.HasClients() {

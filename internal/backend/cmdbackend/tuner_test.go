@@ -22,6 +22,7 @@ import (
 //	helper <動作> [引数…]
 //	  ts            188 バイトの TS (0x47 で始まる) を書き続ける。引数はそのまま標準出力に 1 行目として書く
 //	  exit <コード> 何も書かずに終わる
+//	  fail <コード> 標準エラーに理由を書いて (最後の行が理由)、何も書かずに終わる
 //	  late-exit <コード> 少し書いてから終わる
 //	  silent        何も書かず、止められるまで待つ
 //	  ignore-term   SIGTERM を無視して TS を書き続ける
@@ -55,6 +56,10 @@ func helperMain(args []string) {
 		stream()
 	case "exit":
 		code, _ := strconv.Atoi(args[1])
+		os.Exit(code)
+	case "fail":
+		code, _ := strconv.Atoi(args[1])
+		fmt.Fprint(os.Stderr, "tuning...\nCannot tune to T99: no signal\n\n")
 		os.Exit(code)
 	case "late-exit":
 		code, _ := strconv.Atoi(args[1])
@@ -469,5 +474,41 @@ func TestTune_コマンドが無ければ起動できない(t *testing.T) {
 	err := tn.Tune(backend.Tuning{Channel: "T27"})
 	if err == nil || errors.Is(err, backend.ErrNoLock) || !strings.Contains(err.Error(), "コマンドを起動できません") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestTune_範囲外のチャンネルも選局コマンドに渡す(t *testing.T) {
+	// 範囲を見るのは選局コマンドの側 (落ちれば同期しなかった → 500)。cmd バックエンドは 400 で先に断らない
+	tn, _ := newTestTuner(t, []string{"ts"}, nil)
+	if err := tn.Tune(backend.Tuning{Type: "GR", Channel: "T99"}); err != nil {
+		t.Fatalf("T99: %v", err)
+	}
+	r, err := tn.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := readAtLeast(t, r, 100); !strings.HasPrefix(string(got), "ARGS:GR T99\n") {
+		t.Fatalf("先頭が違う: %q", got)
+	}
+	if err := tn.Stop(); err != nil {
+		t.Fatal(err)
+	}
+	// 書式が読めないものは、今までどおり先に 400
+	if err := tn.Tune(backend.Tuning{Type: "GR", Channel: "X99"}); err == nil {
+		t.Error("X99 を通した")
+	}
+}
+
+func TestTune_落ちた理由はコマンドの標準エラーの最後の行を付ける(t *testing.T) {
+	tn, _ := newTestTuner(t, []string{"fail", "1"}, nil)
+	err := tn.Tune(backend.Tuning{Channel: "T99"})
+	if !errors.Is(err, backend.ErrNoLock) {
+		t.Fatalf("got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Cannot tune to T99: no signal") || strings.Contains(err.Error(), "tuning...") {
+		t.Errorf("最後の行だけ付くはず: %q", err.Error())
+	}
+	if backend.StatusOf(err) != 500 {
+		t.Errorf("500 のはず: %d", backend.StatusOf(err))
 	}
 }

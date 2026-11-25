@@ -40,6 +40,8 @@ type Identity struct {
 
 	mu      sync.Mutex
 	clients map[string]bool
+
+	logf func(string, ...any) // 組んだことの記録 (nil なら出さない)
 }
 
 // Load は tls/ の鍵と証明書を読む。無ければ作り、作り直さない。
@@ -57,7 +59,7 @@ func Load(dir, tokenEnv string, warn func(string, ...any)) (*Identity, error) {
 	if err != nil {
 		return nil, err
 	}
-	id := &Identity{dir: dir, Cert: cert, Print: Fingerprint(cert.Certificate[0]), clients: map[string]bool{}}
+	id := &Identity{dir: dir, Cert: cert, Print: Fingerprint(cert.Certificate[0]), clients: map[string]bool{}, logf: warn}
 
 	id.token = tokenEnv
 	if id.token == "" {
@@ -198,12 +200,29 @@ func (id *Identity) HandlePair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id.mu.Lock()
+	added := !id.clients[req.Client]
 	id.clients[req.Client] = true
+	count := len(id.clients)
 	err = id.save()
+	if err != nil && added {
+		// 書けなかったのに「組んだ」ことにしない。残すと、保存先を直した再送で added が偽になり、記録が出ない
+		delete(id.clients, req.Client)
+	}
 	id.mu.Unlock()
 	if err != nil {
 		writeJSON(w, 500, map[string]any{"ok": false, "error": "clients を書けません: " + err.Error()})
 		return
+	}
+	if added && id.logf != nil {
+		fp := req.Client
+		if len(fp) > 16 {
+			fp = fp[:16]
+		}
+		id.logf("denpa (%s) と組みました", fp)
+		// 断りはしない (denpa を別の機械へ移すときに、新旧が並ぶため)。取り合いの約束が崩れるので注意だけ出す
+		if count > 1 {
+			id.logf("ほかの denpa とも組んでいます (%d 台)。チューナーを使う denpa は 1 つにしてください", count)
+		}
 	}
 	writeJSON(w, 200, map[string]any{"proof": id.proof("agent", req.Client)})
 }
@@ -225,7 +244,7 @@ func (id *Identity) HandleUnpair(w http.ResponseWriter, r *http.Request) {
 func RejectUnpaired(w http.ResponseWriter) {
 	writeJSON(w, 403, map[string]any{
 		"ok":     false,
-		"error":  "この denpa とはまだ組んでいません。denpa の設定でこのエージェントの URL と合言葉を入力してください",
+		"error":  "この denpa とはまだ組んでいません。denpa の設定の「エージェントを追加」に登録用の URL を貼るか、TUNER_AGENT_URL に #pair=… を付けてください",
 		"paired": false,
 	})
 }

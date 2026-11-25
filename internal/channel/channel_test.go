@@ -83,3 +83,32 @@ func TestParse_読めないときの文言(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestParseLax_番号の範囲だけ見ない(t *testing.T) {
+	// 範囲外でも、書式が読めれば通す (選局コマンドに任せる機種のため)。種別は接頭辞で決まる
+	for in, typ := range map[string]Type{"T99": GR, "T12": GR, "C64": GR, "BS25": BS, "CS26": CS, "QV13": CATV, "H106": SKY} {
+		c, err := ParseLax(in)
+		if err != nil {
+			t.Errorf("%q: %v", in, err)
+			continue
+		}
+		if c.Type != typ {
+			t.Errorf("%q: type = %q, want %q", in, c.Type, typ)
+		}
+		if _, err := Parse(in); err == nil {
+			t.Errorf("%q: Parse (範囲を見る) は断るはず", in)
+		}
+	}
+	// 書式・添え字・偶奇・BS07/BS17 は、緩めない
+	for _, in := range []string{"", "X27", "T27:1", "BS16", "CS03", "BS07", "BS17", "BS15:abc", "BS15:70000", "QC30:15", "T-1"} {
+		if _, err := ParseLax(in); err == nil {
+			t.Errorf("%q: 読めてしまった", in)
+		}
+	}
+	// 範囲の中は Parse と同じ
+	a, _ := Parse("BS15:16625")
+	b, err := ParseLax("BS15:16625")
+	if err != nil || a != b {
+		t.Errorf("Parse = %+v, ParseLax = %+v (%v)", a, b, err)
+	}
+}

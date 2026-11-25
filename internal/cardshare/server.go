@@ -322,7 +322,8 @@ func (s *Server) handleInit(w http.ResponseWriter, r *http.Request) {
 	}
 	init, err := s.local.Info()
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		// カードを使えないのは、こちらの不具合ではなく状態 (リーダーが無い・繋がらない)
+		writeJSONError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
 	writeOctets(w, PackInit(init))
