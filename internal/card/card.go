@@ -838,11 +838,15 @@ func (m *Manager) DecodeFile(in, out string) (map[string]any, error) {
 	defer dst.Close()
 	s := b25.NewStream(emmDiscard{m}, m.log)
 	s.SetDecrypt(true)
+	var before, after tscCounter // 入力でスクランブルされていた数と、出力に残った数
 	buf := make([]byte, 188*1024)
 	for {
 		n, rerr := src.Read(buf)
 		if n > 0 {
-			if _, err := dst.Write(s.Process(buf[:n])); err != nil {
+			before.add(buf[:n])
+			out := s.Process(buf[:n])
+			after.add(out)
+			if _, err := dst.Write(out); err != nil {
 				return nil, err
 			}
 		}
@@ -853,11 +857,57 @@ func (m *Manager) DecodeFile(in, out string) (map[string]any, error) {
 			return nil, rerr
 		}
 	}
-	if _, err := dst.Write(s.Flush()); err != nil {
+	tail := s.Flush()
+	after.add(tail)
+	if _, err := dst.Write(tail); err != nil {
 		return nil, err
 	}
-	packets, bad := s.Stats()
-	return map[string]any{"packets": packets, "scrambled": bad}, nil
+	packets, _ := s.Stats()
+
+	// **復号できなかったのに成功を返さない。** カードが無い・ECM が流れていないときも、
+	// スクランブルされたまま全部書き出せてしまう。復号できた数の 1% を超えて残ったら断る
+	// (付属のエージェントと同じ。呼ぶ側が書きかけの出力を消す)
+	remaining := after.n
+	decoded := before.n - remaining
+	if decoded < 0 {
+		decoded = 0
+	}
+	if remaining*100 > decoded {
+		return nil, fmt.Errorf("%d パケットがスクランブルのままです (%s)", remaining, m.decodeFailReason())
+	}
+	return map[string]any{"packets": packets, "scrambled": remaining}, nil
+}
+
+// decodeFailReason は復号できなかった理由。カードを開けなかった理由があればそれ、無ければ一般的な言い方。
+func (m *Manager) decodeFailReason() string {
+	m.mu.Lock()
+	msg := m.failMsg
+	m.mu.Unlock()
+	if msg != "" {
+		return msg
+	}
+	return "鍵を受け取れませんでした (カードを使えない・ECM が流れていないなど)"
+}
+
+// tscCounter は TS の流れの中で、transport_scrambling_control が立っているパケットを数える。
+// 188 バイトごとに区切られた TS 前提で、先頭が 0x47 でないパケットは数えない。
+type tscCounter struct {
+	rest []byte // 前の塊の端数 (188 バイトに満たない分)
+	n    int64
+}
+
+func (c *tscCounter) add(b []byte) {
+	if len(c.rest) > 0 {
+		b = append(append([]byte(nil), c.rest...), b...)
+		c.rest = nil
+	}
+	for len(b) >= 188 {
+		if b[0] == 0x47 && b[3]&0xC0 != 0 {
+			c.n++
+		}
+		b = b[188:]
+	}
+	c.rest = append([]byte(nil), b...)
 }
 
 // NewTLVStream は 4K (MMT/TLV) の選局ごとの復号を作る (docs/b61.md)。

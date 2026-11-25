@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -508,5 +509,38 @@ func TestDecodeFile(t *testing.T) {
 	}
 	if _, err := m.DecodeFile(in, out); err == nil {
 		t.Error("書き出す先がもうあれば断る")
+	}
+}
+
+func TestDecodeFile_復号できなかったら成功を返さない(t *testing.T) {
+	dir := t.TempDir()
+	in := filepath.Join(dir, "in.ts")
+	// スクランブルされた (transport_scrambling_control = 0b10) パケットだけ。PAT・PMT・ECM は無いので復号できない
+	pkt := make([]byte, 188)
+	pkt[0], pkt[3] = 0x47, 0x90
+	os.WriteFile(in, bytes.Repeat(pkt, 2), 0o644)
+	m := New([]Provider{&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": {}}}}, nil, nil, Hooks{})
+	_, err := m.DecodeFile(in, filepath.Join(dir, "out.ts"))
+	if err == nil || !strings.Contains(err.Error(), "2 パケットがスクランブルのままです") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTscCounter_塊の境目をまたいでも数える(t *testing.T) {
+	scrambled := make([]byte, 188)
+	scrambled[0], scrambled[3] = 0x47, 0x80
+	clear := make([]byte, 188)
+	clear[0], clear[3] = 0x47, 0x10
+	stream := append(append(append([]byte(nil), scrambled...), clear...), scrambled...)
+	var c tscCounter
+	for i := 0; i < len(stream); i += 100 { // 188 の境目と合わない切り方
+		end := i + 100
+		if end > len(stream) {
+			end = len(stream)
+		}
+		c.add(stream[i:end])
+	}
+	if c.n != 2 {
+		t.Errorf("n = %d, want 2", c.n)
 	}
 }
