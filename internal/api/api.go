@@ -310,17 +310,15 @@ func (s *Server) putTuners(w http.ResponseWriter, r *http.Request) {
 			spec.Disabled = b
 		}
 		if spec.Device != "" {
-			okPrefix := false
+			// px4:・px4host:・cmd: は中身まで検べる。ほかの形 (付属のエージェントの /dev/dvb/… など) は
+			// 受けて保存する。このエージェントは開かず、そのチューナーの error に出す (denpa の保存を断らない)。
+			known := false
 			for _, p := range []string{"px4:", "px4host:", "cmd:"} {
 				if strings.HasPrefix(spec.Device, p) {
-					okPrefix = true
+					known = true
 				}
 			}
-			if !okPrefix {
-				fail(w, 400, "%s: device は px4:・px4host:・cmd: で始まる形にします", name)
-				return
-			}
-			if s.d.ValidateDevice != nil {
+			if known && s.d.ValidateDevice != nil {
 				if err := s.d.ValidateDevice(spec.Device); err != nil {
 					fail(w, 400, "%s: %s", name, err.Error())
 					return

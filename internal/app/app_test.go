@@ -268,7 +268,6 @@ func TestTuners_PUTの検査(t *testing.T) {
 		{map[string]any{"tuners": []map[string]any{{"types": []string{"GR"}}}}, "name の無いチューナーがあります"},
 		{map[string]any{"tuners": []map[string]any{{"name": "x", "types": "GR"}}}, "x: types は文字列の配列にします"},
 		{map[string]any{"tuners": []map[string]any{{"name": "x", "types": []any{1}}}}, "x: types は文字列の配列にします"},
-		{map[string]any{"tuners": []map[string]any{{"name": "x", "device": "/bin/sh -c rm"}}}, "x: device は px4:・px4host:・cmd: で始まる形にします"},
 		{map[string]any{"tuners": []map[string]any{{"name": "x", "device": "cmd:nothing:/dev/x"}}}, "x: cmd: の機種が機材の定義にありません"},
 	}
 	for _, c := range cases {
@@ -288,6 +287,39 @@ func TestTuners_PUTの検査(t *testing.T) {
 	}
 	if _, err := os.Stat(h.app.Cfg.TunersFile); err == nil {
 		t.Errorf("tuners.json が残っている")
+	}
+}
+
+func TestTuners_PUT_知らない形のdeviceは受けて保存し_開けない理由をerrorに出す(t *testing.T) {
+	h := start(t)
+	h.pair(t)
+	// 付属のエージェントの /dev/dvb/… や、コマンドのような文字列。保存を断らず、実行もしない
+	for _, dev := range []string{"/dev/dvb/adapter9/frontend0", "/bin/sh -c rm"} {
+		code, b := h.do(t, "PUT", "/denpa/tuners", map[string]any{"tuners": []map[string]any{{"name": "x", "types": []string{"GR"}, "device": dev}}})
+		if code != 200 {
+			t.Fatalf("%s: %d %s", dev, code, b)
+		}
+		var res struct {
+			Tuners []struct {
+				Name   string  `json:"name"`
+				Device string  `json:"device"`
+				Error  *string `json:"error"`
+			} `json:"tuners"`
+		}
+		if err := json.Unmarshal(b, &res); err != nil || len(res.Tuners) != 1 {
+			t.Fatalf("%s: %v %s", dev, err, b)
+		}
+		if res.Tuners[0].Device != dev {
+			t.Errorf("device = %q, want %q", res.Tuners[0].Device, dev)
+		}
+		// 開けない理由は、その場では出ないことがある (最初に使うときに出る)。出るなら、この文言
+		if e := res.Tuners[0].Error; e != nil && !strings.Contains(*e, "開けません") {
+			t.Errorf("error = %q", *e)
+		}
+	}
+	// px4:・px4host:・cmd: は、今までどおり中身まで検べて 400
+	if code, _ := h.do(t, "PUT", "/denpa/tuners", map[string]any{"tuners": []map[string]any{{"name": "x", "device": "cmd:nothing:/dev/x"}}}); code != 400 {
+		t.Errorf("cmd: の不明な機種 = %d, want 400", code)
 	}
 }
 

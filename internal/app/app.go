@@ -132,7 +132,7 @@ func (a *App) openBackend(spec backend.TunerSpec) (backend.Tuner, error) {
 			return o(a.env, spec)
 		}
 	}
-	return nil, fmt.Errorf("この OS では %s は使えません", d)
+	return nil, fmt.Errorf("このエージェントでは %s を開けません (対応していない形か、この OS では使えません)", d)
 }
 
 // Start は起動のときの定義を読み、検出を始める。
