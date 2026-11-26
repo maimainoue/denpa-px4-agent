@@ -6,7 +6,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/app"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/config"
@@ -30,13 +29,12 @@ func devicesCmd() int {
 
 func printDevices(w io.Writer, rep app.DevicesReport) {
 	fmt.Fprintf(w, "機材の定義 (%d 機種)\n", len(rep.Defs))
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  機種\t経路\tUSB\t受信機\tLNB\tカード\tDriverHost_PX4 の GUID")
+	tw := &table{}
+	tw.row("機種", "経路", "USB", "受信機", "LNB", "カード", "DriverHost_PX4 の GUID")
 	for _, d := range rep.Defs {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			d.Model, routesOf(d), dash(strings.Join(d.USB, ",")), receiversOf(d), lnbOf(d), cardOf(d), hostGUID(d))
+		tw.row(d.Model, routesOf(d), dash(strings.Join(d.USB, ",")), receiversOf(d), lnbOf(d), cardOf(d), hostGUID(d))
 	}
-	tw.Flush()
+	tw.flush(w)
 
 	fmt.Fprintln(w, "\nいま見つかっている機材 (自動検出)")
 	switch {
@@ -61,8 +59,8 @@ func printDevices(w io.Writer, rep app.DevicesReport) {
 		fmt.Fprintln(w, "  (チューナーがありません)")
 		return
 	}
-	tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  名前\t機種\t受信機\t種別\tdevice\t備考")
+	tw = &table{}
+	tw.row("名前", "機種", "受信機", "種別", "device", "備考")
 	for i, s := range rep.Configured {
 		res := devices.Resolved{Receiver: -1}
 		if i < len(rep.Models) {
@@ -78,9 +76,59 @@ func printDevices(w io.Writer, rep app.DevicesReport) {
 		if res.Note != "" {
 			notes = append(notes, res.Note)
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", s.Name, modelOf(res), receiverOf(res), dash(strings.Join(s.Types, "/")), dash(s.Device), dash(strings.Join(notes, ", ")))
+		tw.row(s.Name, modelOf(res), receiverOf(res), dash(strings.Join(s.Types, "/")), dash(s.Device), dash(strings.Join(notes, ", ")))
 	}
-	tw.Flush()
+	tw.flush(w)
+}
+
+// table は列をそろえて出す表。text/tabwriter は文字数で数えるので、全角の文字 (日本語) が混ざると列がずれる。
+// ここでは、全角を 2 桁として数える。各行は 2 桁字下げし、列の間は 2 桁空ける (最後の列は埋めない)。
+type table struct{ rows [][]string }
+
+func (t *table) row(cols ...string) { t.rows = append(t.rows, cols) }
+
+func (t *table) flush(w io.Writer) {
+	var width []int
+	for _, r := range t.rows {
+		for i, c := range r {
+			if i >= len(width) {
+				width = append(width, 0)
+			}
+			if n := displayWidth(c); n > width[i] {
+				width[i] = n
+			}
+		}
+	}
+	for _, r := range t.rows {
+		var b strings.Builder
+		b.WriteString("  ")
+		for i, c := range r {
+			b.WriteString(c)
+			if i < len(r)-1 {
+				b.WriteString(strings.Repeat(" ", width[i]-displayWidth(c)+2))
+			}
+		}
+		fmt.Fprintln(w, b.String())
+	}
+}
+
+// displayWidth は端末での表示の幅。全角 (CJK・かな・全角記号) は 2、そのほかは 1。
+func displayWidth(s string) int {
+	n := 0
+	for _, r := range s {
+		n++
+		switch {
+		case r >= 0x1100 && r <= 0x115F,
+			r >= 0x2E80 && r <= 0xA4CF,
+			r >= 0xAC00 && r <= 0xD7A3,
+			r >= 0xF900 && r <= 0xFAFF,
+			r >= 0xFE30 && r <= 0xFE4F,
+			r >= 0xFF00 && r <= 0xFF60,
+			r >= 0xFFE0 && r <= 0xFFE6:
+			n++
+		}
+	}
+	return n
 }
 
 // modelOf は機種の表示。1 つに決まれば機種名、決まらなければ候補 (多いときは先頭 3 つと「ほか」)。
