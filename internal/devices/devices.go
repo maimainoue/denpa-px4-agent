@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -285,4 +286,77 @@ func (s *Defs) Overlay(items []Def, logf func(format string, args ...any)) {
 			logf("devices.json で機種を足しました: %s", d.Model)
 		}
 	}
+}
+
+// Resolved は tuners.json の device 文字列から引いた機種 (`--devices` の表示用)。
+type Resolved struct {
+	// Models は機種名。1 つに決まれば 1 つ (Exact)、決まらなければ候補 (px4: は devname を複数の機種が共有する)。
+	// 引けなければ空
+	Models []string
+	Exact  bool
+	// Receiver は受信機の番号。px4host: だけ device に入っている。無ければ -1
+	Receiver int
+	// Note は引けなかった・特別な扱いの理由 (空なら無し)
+	Note string
+}
+
+// ModelOf は device 文字列から機種を引く。実際に開くときの解釈 (host.Open・cmdbackend の resolve) と同じ規則。
+//   - `px4host:<GUID>:<受信機の番号>:<台目>` は、host.deviceGuid が同じ機種
+//   - `cmd:<model>:…` は、`<model>:` で始まる cmd の機種のうちいちばん長いもの
+//   - `px4:/dev/<devname><N>` は、linux.devname が同じ機種 (複数あれば、候補を全部返す。USB の ID で決めるのは検出のとき)
+//   - 空の device は、FAKE_TUNE のときの偽の機種 (fake)
+//
+// 機材は開かず、ファイルも見ない。
+func (s *Defs) ModelOf(device string) Resolved {
+	r := Resolved{Receiver: -1}
+	switch {
+	case device == "":
+		r.Models, r.Exact, r.Note = []string{ModelFake}, true, "device が空 (FAKE_TUNE のときだけ使える)"
+	case strings.HasPrefix(device, "px4host:"):
+		parts := strings.Split(strings.TrimPrefix(device, "px4host:"), ":")
+		guid := strings.ToLower(strings.Trim(parts[0], "{}"))
+		for _, d := range s.list {
+			if d.Host != nil && strings.ToLower(strings.Trim(d.Host.DeviceGUID, "{}")) == guid {
+				r.Models, r.Exact = []string{d.Model}, true
+				break
+			}
+		}
+		if len(parts) >= 2 {
+			if n, err := strconv.Atoi(parts[1]); err == nil && n >= 0 {
+				r.Receiver = n
+			}
+		}
+		if !r.Exact {
+			r.Note = "この GUID の機種が機材の定義にありません"
+		}
+	case strings.HasPrefix(device, "cmd:"):
+		rest := strings.TrimPrefix(device, "cmd:")
+		var best *Def
+		for i := range s.list {
+			d := &s.list[i]
+			if d.IsCmd() && strings.HasPrefix(rest, d.Model+":") && (best == nil || len(d.Model) > len(best.Model)) {
+				best = d
+			}
+		}
+		if best != nil {
+			r.Models, r.Exact = []string{best.Model}, true
+		} else {
+			r.Note = "この機種が cmd の定義にありません"
+		}
+	case strings.HasPrefix(device, "px4:"):
+		base := device[strings.LastIndexAny(device, `/\`)+1:]
+		name := strings.TrimRight(base, "0123456789")
+		for _, d := range s.list {
+			if d.Linux != nil && d.Linux.Devname != "" && d.Linux.Devname == name {
+				r.Models = append(r.Models, d.Model)
+			}
+		}
+		r.Exact = len(r.Models) == 1
+		if len(r.Models) == 0 {
+			r.Note = "この devname の機種が機材の定義にありません"
+		}
+	default:
+		r.Note = "px4:・px4host:・cmd: で始まらない形 (このエージェントは開かない)"
+	}
+	return r
 }

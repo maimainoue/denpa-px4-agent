@@ -647,3 +647,43 @@ func TestDecodeStream_スクランブルされていなければそのまま通�
 		t.Errorf("%+v", st)
 	}
 }
+
+func TestProbe_リーダーを内蔵から外付けの順に開いてINTとIDIを読む(t *testing.T) {
+	p := &fakeProvider{
+		readers: []ReaderInfo{{Name: "外付け", Internal: false}, {Name: "内蔵", Internal: true}, {Name: "塞がっている", Internal: false}},
+		links:   map[string]*fakeLink{"外付け": {}, "内蔵": {}, "塞がっている": {}},
+		openErr: map[string]error{"塞がっている": errors.New("共有違反 (SCARD_E_SHARING_VIOLATION)")},
+	}
+	m := New([]Provider{p}, &memDisabled{names: []string{"外付け"}}, nil, Hooks{})
+	reps, err := m.Probe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reps) != 3 || reps[0].Name != "内蔵" || reps[1].Name != "外付け" || reps[2].Name != "塞がっている" {
+		t.Fatalf("内蔵が先、次に外付けの順のはず: %+v", reps)
+	}
+	// 読めたもの。使わない設定 (cards.json) のリーダーも、確かめるために開く
+	for _, r := range reps[:2] {
+		if r.Err != "" || r.Card != "B-CAS" || r.CASystemID != 0x0005 || len(r.IDs) != 2 || r.IDs[0] != "0000000000012345" {
+			t.Errorf("%s: %+v", r.Name, r)
+		}
+	}
+	if !reps[0].Internal || reps[1].Internal {
+		t.Errorf("内蔵かどうか: %+v", reps)
+	}
+	// 開けないリーダーは、理由を持つ (サーバが動いているときなど)
+	if reps[2].Err == "" || reps[2].Card != "" {
+		t.Errorf("開けないはず: %+v", reps[2])
+	}
+}
+
+func TestProbe_リーダーが無い_一覧を取れない(t *testing.T) {
+	m := New([]Provider{&fakeProvider{}}, nil, nil, Hooks{})
+	if _, err := m.Probe(); err == nil || !strings.Contains(err.Error(), "カードリーダーがありません") {
+		t.Errorf("リーダーが無い: %v", err)
+	}
+	m = New([]Provider{&fakeProvider{err: errors.New("pcscd に繋がりません (/run/pcscd/pcscd.comm)")}}, nil, nil, Hooks{})
+	if _, err := m.Probe(); err == nil || !strings.Contains(err.Error(), "pcscd に繋がりません") {
+		t.Errorf("一覧を取れない: %v", err)
+	}
+}
