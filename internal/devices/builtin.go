@@ -37,7 +37,7 @@ func Builtin() *Defs {
 			Receivers: px4Receivers(), LNB: []int{15}, CardReader: true, PairBySerial: pair,
 		}
 		if model == "PLEX PX-W3U4" {
-			d.Host = &Host{DeviceGUID: "{aa8de3fc-004d-49a4-b976-4250f15a976d}"}
+			d.Host = &Host{DeviceGUID: "{aa8de3fc-004d-49a4-b976-4250f15a976d}", InterfaceGUID: "{6d78c843-49d8-4bb8-8dfa-286fdee4c8a3}"}
 		}
 		s.Put(d)
 	}
@@ -84,23 +84,24 @@ func Builtin() *Defs {
 		Receivers: repeat(1, "GR"), LNB: []int{}, CardReader: true})
 
 	// Windows と macOS の DriverHost_PX4 の機種の GUID (px4_drv の DriverHost_PX4.ini の [DeviceDefinitionN] の GUID)。
-	host := func(model, guid string) {
+	// iface は DeviceInterfaceGUID (WinUSB の機材を数える鍵)。
+	host := func(model, guid, iface string) {
 		d, ok := s.Get(model)
 		if !ok {
 			panic("builtin: 機種表に無い機種に GUID を付けようとした: " + model) // 書き損じ (機種の定義を先に置く)
 		}
-		d.Host = &Host{DeviceGUID: guid}
+		d.Host = &Host{DeviceGUID: guid, InterfaceGUID: iface}
 	}
-	host("Siano RIO", "{9DFE7ABB-8BAA-4004-9AF2-08AE5F4309B0}")       // [DeviceDefinition16] PLEX PX-S1UD / PX-Q1UD
-	host("Sony CECH-ZD1 J", "{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}") // [DeviceDefinition18] (受信機 0 の GUID は {F41EF4C4-31A6-4044-9707-DE9DA0AF7A86})
+	host("Siano RIO", "{9DFE7ABB-8BAA-4004-9AF2-08AE5F4309B0}", "{46B7CEBB-B23F-4F4D-9C99-680F37950977}")       // [DeviceDefinition16] PLEX PX-S1UD / PX-Q1UD
+	host("Sony CECH-ZD1 J", "{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}", "{38E7A8C5-27D1-440D-9BCF-83E1B20FB92F}") // [DeviceDefinition18] (受信機 0 の GUID は {F41EF4C4-31A6-4044-9707-DE9DA0AF7A86})
 
-	host("MyGica T230A", "{08546a8a-6781-4235-b778-0acdeb9ffb16}")            // [DeviceDefinition19]
-	host("PIXELA PIX-DT295 Rev.01", "{F9292CE5-229D-4247-8B4C-1A5B4E250C71}") // [DeviceDefinition20]
-	host("PIXELA PIX-DT295 Rev.02", "{944EE4B3-CC76-40D8-8AB6-6F33B1C6D983}") // [DeviceDefinition21]
-	host("TurboSight TBS 5530", "{3C0B7B52-6A59-4E83-9B0E-5E5D8C0D4A21}")     // [DeviceDefinition23]
-	host("I-O DATA GV-MVP/XZ", "{9D54F32C-9BD4-4758-B0FA-3B8050CB29E0}")      // [DeviceDefinition22] (受信機 0 の GUID は {A3C846A3-9E77-4631-BCF7-91CBBA3E54D1})
-	host("I-O DATA GV-MVP/HZ2W", "{492958E6-3D24-4895-8B1E-082A3446690F}")    // [DeviceDefinition25] (24 は firmware loader で、対象外)
-	host("Quixun QRS-UT100B", "{A96B39EB-E5A6-4901-A859-BD974021F1F2}")       // [DeviceDefinition26]
+	host("MyGica T230A", "{08546a8a-6781-4235-b778-0acdeb9ffb16}", "{51d80ba0-8b6f-4d2d-9cd6-64a1dc28efe2}")            // [DeviceDefinition19]
+	host("PIXELA PIX-DT295 Rev.01", "{F9292CE5-229D-4247-8B4C-1A5B4E250C71}", "{BA834A78-739B-40E7-A1BC-B63920975BDF}") // [DeviceDefinition20]
+	host("PIXELA PIX-DT295 Rev.02", "{944EE4B3-CC76-40D8-8AB6-6F33B1C6D983}", "{82C204EA-A858-4EEA-A58B-4B26FA9893BE}") // [DeviceDefinition21]
+	host("TurboSight TBS 5530", "{3C0B7B52-6A59-4E83-9B0E-5E5D8C0D4A21}", "{7A1D4E96-2B38-4C5F-8F61-0D9A3E7B5C42}")     // [DeviceDefinition23]
+	host("I-O DATA GV-MVP/XZ", "{9D54F32C-9BD4-4758-B0FA-3B8050CB29E0}", "{EFD1A173-B5DA-4BBC-8AC1-B2318799EC9E}")      // [DeviceDefinition22] (受信機 0 の GUID は {A3C846A3-9E77-4631-BCF7-91CBBA3E54D1})
+	host("I-O DATA GV-MVP/HZ2W", "{492958E6-3D24-4895-8B1E-082A3446690F}", "{CD6AE7C3-5A4D-42A4-B33F-F0F0A6CFAEED}")    // [DeviceDefinition25] (24 は firmware loader で、対象外)
+	host("Quixun QRS-UT100B", "{A96B39EB-E5A6-4901-A859-BD974021F1F2}", "{B1DFEDB0-D90F-470A-B5D0-776750BF954F}")       // [DeviceDefinition26]
 
 	// Sony nasne (HTTP) は仕様書 6.5 の置き方 A。devices.json を書かなくても tuners.json だけで使える。
 	// エージェントが HTTP の GET で直接読む (curl は使わない)。503 は使用中 (409)、404 は同期しなかった、

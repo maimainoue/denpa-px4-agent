@@ -72,7 +72,10 @@ type Linux struct {
 
 // Host は host の項目。
 type Host struct {
-	DeviceGUID    string   `json:"deviceGuid"`
+	DeviceGUID string `json:"deviceGuid"`
+	// InterfaceGUID は DriverHost_PX4.ini の `DeviceInterfaceGUID`。WinUSB が入っている機材を数える鍵 (Windows の自動検出)。
+	// 書かなければ、USB の ID (`usb`) だけで数える
+	InterfaceGUID string   `json:"interfaceGuid,omitempty"`
 	ReceiverGUIDs []string `json:"receiverGuids,omitempty"`
 }
 

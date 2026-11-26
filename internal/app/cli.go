@@ -31,7 +31,7 @@ func NewCardManager(cfg *config.Config, log *logx.Logger) *card.Manager {
 type DevicesReport struct {
 	Defs []devices.Def // 機材の定義 (組み込み + devices.json)。定義の順
 
-	// 自動検出。Linux だけ (px4_drv の chardev)。Windows と macOS には検出が無い (HasDetector が偽)
+	// 自動検出。Linux (px4_drv の chardev)・Windows (SetupAPI)・macOS (IOKit)。どれも無い OS は HasDetector が偽
 	HasDetector bool
 	Detected    []backend.TunerSpec
 	DetectErrs  []string

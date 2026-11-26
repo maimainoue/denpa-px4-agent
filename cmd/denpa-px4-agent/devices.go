@@ -39,7 +39,7 @@ func printDevices(w io.Writer, rep app.DevicesReport) {
 	fmt.Fprintln(w, "\nいま見つかっている機材 (自動検出)")
 	switch {
 	case !rep.HasDetector:
-		fmt.Fprintln(w, "  (この OS には自動検出がありません。tuners.json に px4host:<GUID>:<受信機の番号>:<台目> を書きます。自動検出があるのは Linux の chardev だけです)")
+		fmt.Fprintln(w, "  (この OS には自動検出がありません。tuners.json に px4host:<GUID>:<受信機の番号>:<台目> を書きます。自動検出があるのは Linux (chardev)・Windows (SetupAPI)・macOS (IOKit) です)")
 	case len(rep.Detected) == 0 && len(rep.DetectErrs) == 0:
 		fmt.Fprintln(w, "  (見つかりません)")
 	}
