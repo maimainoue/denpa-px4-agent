@@ -159,7 +159,7 @@ type Tuner interface {
 
 nasne (HTTP) は px4_drv の機種ではなく、`cmd` バックエンドの組み込みです ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。
 
-`host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します (いま組み込みで持つのは、PX-W3U4 と Sony CECH-ZD1 J です。後者は `{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}`、受信機は地上波 1 基で、Windows の実機で確かめました)。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
+`host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します (いま組み込みで持つのは、PX-W3U4・Sony CECH-ZD1 J・I-O DATA GV-MVP/XZ です。Sony は `{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}`、GV-MVP/XZ は `{9D54F32C-9BD4-4758-B0FA-3B8050CB29E0}` で、どちらも受信機は地上波 1 基です。Windows の実機で確かめました)。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
 
 - Windows と macOS では、DriverHost_PX4 の定義に無い機種は開けません。足すときは DriverHost_PX4.ini と `devices.json` の両方に書きます
 - Linux では、px4_drv が `/dev/<devname><N>` を作る機種だけが開けます。`devices.json` に足すのは、fork に新しい機種を足したときと、`types` を変えたいときです
@@ -975,7 +975,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 | `--pair`                                              | 組むときの URL を標準出力に出して終わる (鍵と合言葉が無ければ作る。メッセージは標準エラー)                                 |
 | `--status`                                            | 動いているエージェントに自分の証明書で繋ぎ、`/denpa/tuners` の JSON をそのまま出す。繋がらなければ理由を出して 1          |
 | `--devices`                                           | 機材の定義 (組み込み + `devices.json`。機種・経路 (`chardev`・`host`・`cmd`・`http`)・USB・受信機・LNB・カード・DriverHost_PX4 の GUID) と、いま見つかっている機材 (自動検出。Linux の chardev だけ。Windows と macOS は無い旨を出す)、`tuners.json` の中身 (名前・**機種**・受信機の番号・種別・`device`・備考) を並べて終わる。機種は `device` から引く: `px4host:` は GUID、`cmd:` は最長一致の機種名、`px4:` は devname (複数の機種が共有するときは 1 つに決めず、先頭 3 つと「ほか」で候補を出す)。引けなければ理由を備考に出す。機材は開かない。`DRIVER_HOST_INI` はまだ読まない |
-| `--tune <device[+device…]> <channel[,channel…]> [--lnb 15v] [--decode] [--card-url <url>] [--seconds N]` | サーバを立てずに選局して TS を標準出力へ。実機で確かめる入口。`--decode` で復号も |
+| `--tune <device> <channel[,channel…]> [--lnb 15v] [--decode] [--card-url <url>] [--seconds N]` | サーバを立てずに選局して、TS を標準出力へ出す。実機で確かめる入口。`channel` は「,」で並べると 1 つずつ選局する (1 つが失敗しても、あとは続ける)。`--seconds` は、最初の TS が来てから読む秒数 (既定 10、1〜3600。最初の TS が 30 秒来なければ、そのチャンネルは失敗)。`--decode` で復号も (EMM は渡さない。4K の TLV は復号せずに出す)。`--card-url` は `CARD_URL` と同じ。標準出力が端末のときは、TS を捨てて、測定の結果だけを出す。測定の結果 (最初の TS までの時間・量と速さ・パケット数・同期はずれ・TEI・連続性カウンタの不連続・スクランブルの割合・C/N・復号した数) は標準エラーに出す。終了コードは、全部のチャンネルで TS が来れば 0 (`--decode` では、残りが復号できた数の 1% 以内)、1 つでも失敗すれば 1、引数の誤りは 2。**`<device>+<device>` の同時選局は、まだ対応していない** (引数の誤りで 2) |
 | `--decode-file <in.ts> [<out.ts>]`                    | ファイルを復号する。`out` が無ければ復号せず、スクランブルされたパケットの数と割合だけを出す (カードには触らない)。`out` があれば復号して書き、書き出す先がもうあれば断る (上書きしない)。残りが復号できた数の 1% を超えたら (`/denpa/decode` と同じ判定) 出力を消して 1 で終わる。`CARD_URL` を書けば鍵を貰う。置き場 (`RAW_DIR`) の制限は受けない。結果は標準出力、記録は標準エラー |
 | `--card`                                              | リーダーを並べ (内蔵 → 外付け)、1 つずつ開いて INT と IDI の結果 (B-CAS か A-CAS・`CA_system_id`・カード ID) を出す。**カードは排他で開くので、サーバを止めてから使う** (動いていると共有違反でそのリーダーの理由が出る)。使わない設定 (`cards.json`) のリーダーも確かめる。1 つでも読めれば 0、リーダーが無い・1 つも読めなければ 1。カード ID は個人情報なので、貼るときは気をつける |
 

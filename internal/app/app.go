@@ -119,16 +119,21 @@ func New(cfg *config.Config, log *logx.Logger) (*App, error) {
 }
 
 func (a *App) openBackend(spec backend.TunerSpec) (backend.Tuner, error) {
+	return openBackend(a.env, a.cmd, spec)
+}
+
+// openBackend は device 文字列の接頭辞で、バックエンドを選んで開く。サーバと `--tune` が同じ規則で開く。
+func openBackend(env *Env, cmd *cmdbackend.Backend, spec backend.TunerSpec) (backend.Tuner, error) {
 	d := spec.Device
 	if d == "" || strings.HasPrefix(d, "cmd:") {
-		if d == "" && a.Cfg.FakeTune == "" {
+		if d == "" && env.Cfg.FakeTune == "" {
 			return nil, fmt.Errorf("device がありません")
 		}
-		return a.cmd.Open(spec)
+		return cmd.Open(spec)
 	}
 	for prefix, o := range openers {
 		if strings.HasPrefix(d, prefix) {
-			return o(a.env, spec)
+			return o(env, spec)
 		}
 	}
 	return nil, fmt.Errorf("このエージェントでは %s を開けません (対応していない形か、この OS では使えません)", d)
