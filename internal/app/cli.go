@@ -38,6 +38,7 @@ type DevicesReport struct {
 	// tuners.json の定義 (found が偽なら、ファイルが無い)
 	TunersFile string
 	Configured []backend.TunerSpec
+	Models     []devices.Resolved // Configured と同じ並び。device から引いた機種 (Defs.ModelOf)
 	Found      bool
 }
 
@@ -63,5 +64,8 @@ func ListDevices(cfg *config.Config, log *logx.Logger) DevicesReport {
 		rep.Detected = append(rep.Detected, specs...)
 	}
 	rep.Configured, rep.Found = store.Tuners{Path: cfg.TunersFile}.Load(log.Printf)
+	for _, s := range rep.Configured {
+		rep.Models = append(rep.Models, defs.ModelOf(s.Device))
+	}
 	return rep
 }

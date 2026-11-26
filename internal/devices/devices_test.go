@@ -253,3 +253,49 @@ func TestBuiltin_SonyCECHZD1Jは_DriverHost_PX4_のGUIDを持つ(t *testing.T) {
 		t.Error("内蔵のカードリーダーがあるはず")
 	}
 }
+
+func TestModelOf_deviceから機種を引く(t *testing.T) {
+	defs := Builtin()
+	defs.Put(Def{Model: "試験の cmd 機", Command: []string{"/bin/true", "{channel}"}, ChannelFormat: FormatDenpa, Receivers: recv(rx("GR"))})
+	defs.Put(Def{Model: "試験の cmd 機:長い", Command: []string{"/bin/true", "{channel}"}, ChannelFormat: FormatDenpa, Receivers: recv(rx("GR"))})
+
+	for _, c := range []struct {
+		device   string
+		models   []string
+		exact    bool
+		receiver int
+	}{
+		{"px4host:{aa8de3fc-004d-49a4-b976-4250f15a976d}:2:0", []string{"PLEX PX-W3U4"}, true, 2},
+		{"px4host:{AA8DE3FC-004D-49A4-B976-4250F15A976D}:0:1", []string{"PLEX PX-W3U4"}, true, 0}, // 大文字小文字・波かっこの有無を問わない
+		{"px4host:aa8de3fc-004d-49a4-b976-4250f15a976d:3:0", []string{"PLEX PX-W3U4"}, true, 3},
+		{"px4host:{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}:0:0", []string{"Sony CECH-ZD1 J"}, true, 0},
+		{"px4:/dev/pxmlt5video0", []string{"PLEX PX-MLT5PE"}, true, -1},
+		{"cmd:試験の cmd 機:/dev/x", []string{"試験の cmd 機"}, true, -1},
+		{"cmd:試験の cmd 機:長い:/dev/x", []string{"試験の cmd 機:長い"}, true, -1}, // 前方一致のうちいちばん長い機種
+		{"cmd:Sony nasne (nasne-recpt1 HTTP):192.168.0.5", []string{"Sony nasne (nasne-recpt1 HTTP)"}, true, -1},
+		{"", []string{ModelFake}, true, -1},
+	} {
+		r := defs.ModelOf(c.device)
+		if len(r.Models) != len(c.models) || (len(c.models) > 0 && r.Models[0] != c.models[0]) || r.Exact != c.exact || r.Receiver != c.receiver {
+			t.Errorf("%q: %+v, want models=%v exact=%v receiver=%d", c.device, r, c.models, c.exact, c.receiver)
+		}
+	}
+
+	// px4: は devname を複数の機種が共有する (px4video)。1 つに決めず、候補を全部返す
+	r := defs.ModelOf("px4:/dev/px4video2")
+	if r.Exact || len(r.Models) < 2 || r.Models[0] != "PLEX PX-W3U4" {
+		t.Errorf("候補になるはず: %+v", r)
+	}
+
+	// 引けないもの: 理由を持つ
+	for _, device := range []string{
+		"px4host:{00000000-0000-0000-0000-000000000000}:0:0",
+		"cmd:無い機種:/dev/x",
+		"px4:/dev/nothing0",
+		"/dev/dvb/adapter0/frontend0",
+	} {
+		if r := defs.ModelOf(device); len(r.Models) != 0 || r.Note == "" || r.Exact {
+			t.Errorf("%q: 引けないはず: %+v", device, r)
+		}
+	}
+}

@@ -59,17 +59,49 @@ func printDevices(w io.Writer, rep app.DevicesReport) {
 	}
 	if len(rep.Configured) == 0 {
 		fmt.Fprintln(w, "  (チューナーがありません)")
+		return
 	}
-	for _, s := range rep.Configured {
-		extra := ""
+	tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "  名前\t機種\t受信機\t種別\tdevice\t備考")
+	for i, s := range rep.Configured {
+		res := devices.Resolved{Receiver: -1}
+		if i < len(rep.Models) {
+			res = rep.Models[i]
+		}
+		var notes []string
 		if s.Disabled {
-			extra = "  無効"
+			notes = append(notes, "無効")
 		}
 		if s.Lnb != "" {
-			extra += "  lnb " + s.Lnb
+			notes = append(notes, "lnb "+s.Lnb)
 		}
-		fmt.Fprintf(w, "  %s  %s  (%s)%s\n", s.Name, dash(s.Device), strings.Join(s.Types, "/"), extra)
+		if res.Note != "" {
+			notes = append(notes, res.Note)
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\n", s.Name, modelOf(res), receiverOf(res), dash(strings.Join(s.Types, "/")), dash(s.Device), dash(strings.Join(notes, ", ")))
 	}
+	tw.Flush()
+}
+
+// modelOf は機種の表示。1 つに決まれば機種名、決まらなければ候補 (多いときは先頭 3 つと「ほか」)。
+func modelOf(r devices.Resolved) string {
+	switch {
+	case len(r.Models) == 0:
+		return "-"
+	case r.Exact:
+		return r.Models[0]
+	case len(r.Models) <= 3:
+		return "候補: " + strings.Join(r.Models, " / ")
+	default:
+		return fmt.Sprintf("候補: %s ほか %d 機種", strings.Join(r.Models[:3], " / "), len(r.Models)-3)
+	}
+}
+
+func receiverOf(r devices.Resolved) string {
+	if r.Receiver < 0 {
+		return "-"
+	}
+	return fmt.Sprintf("#%d", r.Receiver)
 }
 
 func dash(s string) string {

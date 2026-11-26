@@ -41,12 +41,18 @@ func TestLnbOf_書いていない_給電できない_電圧(t *testing.T) {
 }
 
 func TestPrintDevices_定義と検出とtuners_json(t *testing.T) {
-	rep := app.DevicesReport{
-		Defs:       devices.Builtin().All(),
-		TunersFile: "/c/tuners.json",
-		Found:      true,
-		Configured: []backend.TunerSpec{{Name: "torne0", Types: []string{"GR"}, Device: "px4host:{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}:0:0"}, {Name: "off", Types: []string{"BS", "CS"}, Disabled: true, Lnb: "15v"}},
+	defs := devices.Builtin()
+	configured := []backend.TunerSpec{
+		{Name: "torne0", Types: []string{"GR"}, Device: "px4host:{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}:0:0"},
+		{Name: "off", Types: []string{"BS", "CS"}, Disabled: true, Lnb: "15v", Device: "px4:/dev/pxmlt5video0"},
+		{Name: "linux", Types: []string{"GR"}, Device: "px4:/dev/px4video2"},
+		{Name: "迷子", Types: []string{"GR"}, Device: "px4host:{00000000-0000-0000-0000-000000000000}:0:0"},
 	}
+	var models []devices.Resolved
+	for _, s := range configured {
+		models = append(models, defs.ModelOf(s.Device))
+	}
+	rep := app.DevicesReport{Defs: defs.All(), TunersFile: "/c/tuners.json", Found: true, Configured: configured, Models: models}
 	var b bytes.Buffer
 	printDevices(&b, rep)
 	out := b.String()
@@ -55,7 +61,7 @@ func TestPrintDevices_定義と検出とtuners_json(t *testing.T) {
 		"PLEX PX-W3U4", "chardev+host", "0511:083f", "4 基: BS/CS×2, GR×2", "15v", "{aa8de3fc-004d-49a4-b976-4250f15a976d}", // 機種名・経路・USB・受信機・LNB・GUID
 		"Sony CECH-ZD1 J", "{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}",
 		"自動検出がありません", // HasDetector が偽 = Windows と macOS
-		"tuners.json (/c/tuners.json)", "torne0  px4host:", "off  -  (BS/CS)  無効  lnb 15v",
+		"tuners.json (/c/tuners.json)", "名前", "機種", "受信機", "備考",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("出力に %q がありません:\n%s", want, out)
@@ -115,6 +121,55 @@ func TestRun_devicesとcardは引数を足せない(t *testing.T) {
 	for _, args := range [][]string{{"--devices", "x"}, {"--card", "zd1j:1-1"}} {
 		if code := run(args); code != 2 {
 			t.Errorf("%v = %d, want 2", args, code)
+		}
+	}
+}
+
+func TestPrintDevices_tuners_jsonの各行に機種を出す(t *testing.T) {
+	defs := devices.Builtin()
+	configured := []backend.TunerSpec{
+		{Name: "torne0", Types: []string{"GR"}, Device: "px4host:{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}:0:0"},
+		{Name: "mlt5", Types: []string{"GR", "BS"}, Lnb: "15v", Device: "px4:/dev/pxmlt5video0"},
+		{Name: "linux", Types: []string{"GR"}, Device: "px4:/dev/px4video2"},
+		{Name: "lost", Types: []string{"GR"}, Device: "px4host:{00000000-0000-0000-0000-000000000000}:0:0"},
+		{Name: "dvb", Types: []string{"GR"}, Device: "/dev/dvb/adapter0/frontend0", Disabled: true},
+	}
+	var models []devices.Resolved
+	for _, s := range configured {
+		models = append(models, defs.ModelOf(s.Device))
+	}
+	var b bytes.Buffer
+	printDevices(&b, app.DevicesReport{TunersFile: "x", Found: true, Configured: configured, Models: models})
+	var lines = map[string]string{}
+	in := false
+	for _, l := range strings.Split(b.String(), "\n") {
+		if strings.HasPrefix(l, "tuners.json") {
+			in = true
+			continue
+		}
+		if in && strings.TrimSpace(l) != "" {
+			lines[strings.Fields(l)[0]] = l
+		}
+	}
+	for name, wants := range map[string][]string{
+		"torne0": {"Sony CECH-ZD1 J", "#0", "GR"},
+		"mlt5":   {"PLEX PX-MLT5PE", "GR/BS", "lnb 15v"},
+		"linux":  {"候補: PLEX PX-W3U4 / PLEX PX-W3PE4 / PLEX PX-W3PE5 ほか", "機種"}, // devname を共有する機種は、先頭 3 つと「ほか」
+		"lost":   {"この GUID の機種が機材の定義にありません"},
+		"dvb":    {"無効", "px4:・px4host:・cmd: で始まらない形"},
+	} {
+		line, ok := lines[name]
+		if !ok {
+			t.Errorf("%s の行がありません:\n%s", name, b.String())
+			continue
+		}
+		for _, w := range wants {
+			if w == "機種" {
+				continue
+			}
+			if !strings.Contains(line, w) {
+				t.Errorf("%s の行に %q がありません: %s", name, w, line)
+			}
 		}
 	}
 }
