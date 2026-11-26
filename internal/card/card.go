@@ -825,7 +825,79 @@ type emmDiscard struct{ *Manager }
 
 func (emmDiscard) EMM([]byte) {}
 
+// DecodeStats は復号の数え。
+type DecodeStats struct {
+	Bytes     int64 // 出力した大きさ (ObserveTS では 0)
+	Packets   int64 // 入力のパケット数
+	Scrambled int64 // 入力でスクランブルされていたパケット (transport_scrambling_control が立っているもの)
+	Remaining int64 // 出力にスクランブルのまま残ったパケット
+}
+
+// Decoded は復号できたパケットの数。
+func (s DecodeStats) Decoded() int64 {
+	if d := s.Scrambled - s.Remaining; d > 0 {
+		return d
+	}
+	return 0
+}
+
+// Failed は復号できたとは言えないか。**復号できなかったのに成功を返さない。**
+// カードが無い・ECM が流れていないときも、スクランブルされたまま全部書き出せてしまう。
+// 残ったものが、復号できた数の 1% を超えたら失敗とする (付属のエージェントと同じ)。
+func (s DecodeStats) Failed() bool { return s.Remaining*100 > s.Decoded() }
+
+// DecodeStream は src の TS を復号して dst に書く。EMM は渡さない。数えを返す (成否は Failed で見る)。
+func (m *Manager) DecodeStream(src io.Reader, dst io.Writer) (DecodeStats, error) {
+	s := b25.NewStream(emmDiscard{m}, m.log)
+	s.SetDecrypt(true)
+	var before, after tscCounter // 入力でスクランブルされていた数と、出力に残った数
+	var written int64
+	write := func(b []byte) error {
+		after.add(b)
+		n, err := dst.Write(b)
+		written += int64(n)
+		return err
+	}
+	buf := make([]byte, 188*1024)
+	for {
+		n, rerr := src.Read(buf)
+		if n > 0 {
+			before.add(buf[:n])
+			if err := write(s.Process(buf[:n])); err != nil {
+				return DecodeStats{}, err
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return DecodeStats{}, rerr
+		}
+	}
+	if err := write(s.Flush()); err != nil {
+		return DecodeStats{}, err
+	}
+	return DecodeStats{Bytes: written, Packets: before.total, Scrambled: before.n, Remaining: after.n}, nil
+}
+
+// ObserveTS は復号せずに、パケットとスクランブルされたパケットの数を数える。
+func ObserveTS(src io.Reader) (DecodeStats, error) {
+	var c tscCounter
+	buf := make([]byte, 188*1024)
+	for {
+		n, err := src.Read(buf)
+		c.add(buf[:n])
+		if err == io.EOF {
+			return DecodeStats{Packets: c.total, Scrambled: c.n}, nil
+		}
+		if err != nil {
+			return DecodeStats{}, err
+		}
+	}
+}
+
 // DecodeFile はスクランブルされたまま録れた TS を復号して書く (9.7)。EMM は渡さない。
+// 復号できなかったら失敗を返す (呼ぶ側が書きかけの出力を消す)。
 func (m *Manager) DecodeFile(in, out string) (map[string]any, error) {
 	src, err := os.Open(in)
 	if err != nil {
@@ -837,50 +909,18 @@ func (m *Manager) DecodeFile(in, out string) (map[string]any, error) {
 		return nil, fmt.Errorf("書き出す先を作れません: %v", err)
 	}
 	defer dst.Close()
-	s := b25.NewStream(emmDiscard{m}, m.log)
-	s.SetDecrypt(true)
-	var before, after tscCounter // 入力でスクランブルされていた数と、出力に残った数
-	buf := make([]byte, 188*1024)
-	for {
-		n, rerr := src.Read(buf)
-		if n > 0 {
-			before.add(buf[:n])
-			out := s.Process(buf[:n])
-			after.add(out)
-			if _, err := dst.Write(out); err != nil {
-				return nil, err
-			}
-		}
-		if rerr == io.EOF {
-			break
-		}
-		if rerr != nil {
-			return nil, rerr
-		}
-	}
-	tail := s.Flush()
-	after.add(tail)
-	if _, err := dst.Write(tail); err != nil {
+	stats, err := m.DecodeStream(src, dst)
+	if err != nil {
 		return nil, err
 	}
-	packets, _ := s.Stats()
-
-	// **復号できなかったのに成功を返さない。** カードが無い・ECM が流れていないときも、
-	// スクランブルされたまま全部書き出せてしまう。復号できた数の 1% を超えて残ったら断る
-	// (付属のエージェントと同じ。呼ぶ側が書きかけの出力を消す)
-	remaining := after.n
-	decoded := before.n - remaining
-	if decoded < 0 {
-		decoded = 0
+	if stats.Failed() {
+		return nil, fmt.Errorf("%d パケットがスクランブルのままです (%s)", stats.Remaining, m.DecodeFailReason())
 	}
-	if remaining*100 > decoded {
-		return nil, fmt.Errorf("%d パケットがスクランブルのままです (%s)", remaining, m.decodeFailReason())
-	}
-	return map[string]any{"packets": packets, "scrambled": remaining}, nil
+	return map[string]any{"packets": stats.Packets, "scrambled": stats.Remaining}, nil
 }
 
-// decodeFailReason は復号できなかった理由。カードを開けなかった理由があればそれ、無ければ一般的な言い方。
-func (m *Manager) decodeFailReason() string {
+// DecodeFailReason は復号できなかった理由。カードを開けなかった理由があればそれ、無ければ一般的な言い方。
+func (m *Manager) DecodeFailReason() string {
 	m.mu.Lock()
 	msg := m.failMsg
 	m.mu.Unlock()
@@ -894,8 +934,9 @@ func (m *Manager) decodeFailReason() string {
 // パケットの境目の探し方は b25.Stream.Process と同じ (先頭の余分なバイトを飛ばし、188 バイト先も 0x47 のものを境目とする)。
 // 入力の数え方が復号側とずれると、先頭にごみのある録画で、復号できた数が 0 になってしまう。
 type tscCounter struct {
-	buf []byte // 前の塊の端数 (188 バイトに満たない分)
-	n   int64
+	buf   []byte // 前の塊の端数 (188 バイトに満たない分)
+	n     int64  // スクランブルされていたパケット
+	total int64  // 数えたパケット
 }
 
 func (c *tscCounter) add(b []byte) {
@@ -911,6 +952,7 @@ func (c *tscCounter) add(b []byte) {
 			pos += 1 + i
 			continue
 		}
+		c.total++
 		if c.buf[pos+3]&0xC0 != 0 {
 			c.n++
 		}
