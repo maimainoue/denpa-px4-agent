@@ -87,8 +87,7 @@ func New(cfg *config.Config, log *logx.Logger) (*App, error) {
 	a.Tuners = store.Tuners{Path: cfg.TunersFile}
 	a.Cards = &store.Cards{Path: cfg.CardsFile}
 
-	a.Defs = devices.Builtin()
-	a.Defs.Overlay(devices.LoadFile(cfg.DevicesFile, log.Printf), log.Printf)
+	a.Defs = LoadDefs(cfg, log)
 	a.env = &Env{Cfg: cfg, Defs: a.Defs, Log: log.Printf}
 	a.cmd = cmdbackend.New(cmdbackend.Config{Defs: a.Defs, FakeTune: cfg.FakeTune, Log: log.Printf})
 

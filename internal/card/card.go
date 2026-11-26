@@ -12,6 +12,7 @@ import (
 	"hash/fnv"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -975,4 +976,61 @@ func (m *Manager) NewStream(tuner string) *b25.Stream {
 	})
 	s.Debug = os.Getenv("B25_DEBUG") == "1"
 	return s
+}
+
+// ReaderReport は Probe の、リーダー 1 つぶんの結果。
+type ReaderReport struct {
+	Name       string
+	Internal   bool
+	Err        string   // 開けない・INT が通らない理由 (空なら読めた)
+	Card       string   // "B-CAS" か "A-CAS" (Err が空のとき)
+	CASystemID uint16   // INT の CA_system_id
+	IDs        []string // IDI のカード ID (16 桁。カードの個人情報なので、記録に残さないこと)
+}
+
+// Probe は見つかったリーダーを順に (内蔵 → 外付け) 開いて、INT と IDI を読み、閉じる (`--card`)。
+// 使わない設定 (`cards.json`) のリーダーも、確かめるために開く。排他で開くので、サーバが動いていると
+// 共有違反で開けない (理由が Err に入る)。リーダーを 1 つも見つけられなければ、理由を error で返す。
+func (m *Manager) Probe() ([]ReaderReport, error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	var internal, external []ReaderReport
+	var errs []string
+	for _, p := range m.fakeFirstProviders() {
+		rs, err := p.List()
+		if err != nil {
+			errs = append(errs, err.Error())
+			continue
+		}
+		for _, r := range rs {
+			rep := ReaderReport{Name: r.Name, Internal: r.Internal}
+			if link, err := p.Open(r.Name); err != nil {
+				rep.Err = err.Error()
+			} else {
+				info, ids, acas, err := probe(link)
+				link.Close()
+				if err != nil {
+					rep.Err = err.Error()
+				} else {
+					rep.Card, rep.CASystemID, rep.IDs = "B-CAS", info.CASystemID, ids
+					if acas {
+						rep.Card = "A-CAS"
+					}
+				}
+			}
+			if r.Internal {
+				internal = append(internal, rep)
+			} else {
+				external = append(external, rep)
+			}
+		}
+	}
+	out := append(internal, external...)
+	if len(out) == 0 {
+		if len(errs) > 0 {
+			return nil, errors.New(strings.Join(errs, "; "))
+		}
+		return nil, errors.New("使うカードリーダーがありません。カードリーダーをオンにしてください")
+	}
+	return out, nil
 }
