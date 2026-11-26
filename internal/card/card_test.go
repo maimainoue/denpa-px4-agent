@@ -551,7 +551,7 @@ func TestTscCounter_先頭にごみがあっても復号側と同じ境目で数
 	clear := make([]byte, 188)
 	clear[0], clear[3] = 0x47, 0x10
 	aligned := bytes.Repeat(append(append([]byte(nil), scrambled...), clear...), 5) // スクランブル 5、そうでない 5
-	junk := append([]byte{0x00, 0x13, 0x37}, aligned...)                             // 先頭に 3 バイトのごみ
+	junk := append([]byte{0x00, 0x13, 0x37}, aligned...)                            // 先頭に 3 バイトのごみ
 
 	count := func(in []byte, step int) int64 {
 		var c tscCounter
@@ -571,5 +571,79 @@ func TestTscCounter_先頭にごみがあっても復号側と同じ境目で数
 		if got := count(junk, step); got != 5 {
 			t.Errorf("先頭にごみ (塊 %d): %d, want 5", step, got)
 		}
+	}
+}
+
+func tsPacket(tsc byte) []byte {
+	p := make([]byte, 188)
+	p[0], p[3] = 0x47, tsc<<6|0x10
+	return p
+}
+
+func TestDecodeStats_Failedは残りが復号できた数の1パーセントを超えたとき(t *testing.T) {
+	// Failed: 残り*100 > 復号できた数 (復号できた数 = スクランブルされていた数 - 残り)
+	for _, c := range []struct {
+		scrambled, remaining int64
+		want                 bool
+	}{
+		{0, 0, false},    // スクランブルされていない入力
+		{100, 0, false},  // 全部復号できた
+		{101, 1, false},  // 残り 1、復号 100: 1% ちょうどは通す
+		{102, 2, true},   // 残り 2、復号 100: 2%
+		{1000, 9, false}, // 残り 9、復号 991: 1% 未満
+		{1000, 10, true}, // 残り 10、復号 990: 1% を超える
+		{50, 50, true},   // 1 つも復号できない
+		{1, 1, true},     // 復号 0 で残りがある
+	} {
+		if got := (DecodeStats{Scrambled: c.scrambled, Remaining: c.remaining}).Failed(); got != c.want {
+			t.Errorf("scrambled=%d remaining=%d: Failed = %v, want %v", c.scrambled, c.remaining, got, c.want)
+		}
+	}
+	if d := (DecodeStats{Scrambled: 3, Remaining: 5}).Decoded(); d != 0 {
+		t.Errorf("Decoded は負にならない: %d", d)
+	}
+}
+
+func TestObserveTS_復号せずに数える(t *testing.T) {
+	var in []byte
+	in = append(in, 0x00, 0x13, 0x37) // 先頭にごみ
+	for i := 0; i < 10; i++ {
+		in = append(in, tsPacket(2)...) // スクランブルされている
+		in = append(in, tsPacket(0)...)
+	}
+	st, err := ObserveTS(bytes.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Packets != 20 || st.Scrambled != 10 || st.Remaining != 0 || st.Bytes != 0 {
+		t.Errorf("%+v", st)
+	}
+	if st, err := ObserveTS(bytes.NewReader(nil)); err != nil || st.Packets != 0 {
+		t.Errorf("空: %+v %v", st, err)
+	}
+}
+
+func TestDecodeStream_スクランブルされていなければそのまま通し_数えを返す(t *testing.T) {
+	m := New([]Provider{&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": {}}}}, nil, nil, Hooks{})
+	in := bytes.Repeat(tsPacket(0), 6)
+	var out bytes.Buffer
+	st, err := m.DecodeStream(bytes.NewReader(in), &out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Packets != 6 || st.Scrambled != 0 || st.Remaining != 0 || st.Bytes != int64(len(in)) || st.Failed() {
+		t.Errorf("%+v", st)
+	}
+	if !bytes.Equal(out.Bytes(), in) {
+		t.Errorf("そのまま通すはず (%d バイト)", out.Len())
+	}
+
+	// スクランブルされたまま (PAT・PMT・ECM が無い) は、数えは返すが、Failed になる
+	st, err = m.DecodeStream(bytes.NewReader(bytes.Repeat(tsPacket(2), 4)), &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Scrambled != 4 || st.Remaining != 4 || !st.Failed() {
+		t.Errorf("%+v", st)
 	}
 }

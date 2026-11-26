@@ -17,11 +17,12 @@ import (
 // version は -ldflags "-X main.version=…" で入れる。
 var version = "dev"
 
-const usage = `使い方: denpa-px4-agent [--version | --pair | --status]
+const usage = `使い方: denpa-px4-agent [--version | --pair | --status | --decode-file <in.ts> [<out.ts>]]
   (無し)     サーバとして動く
   --version  バージョンを出して終わる
   --pair     組むときの URL を標準出力に出して終わる
   --status   動いているエージェントの /denpa/tuners を出して終わる (繋がらなければ 1)
+  --decode-file <in.ts> [<out.ts>]  ファイルを復号する (out が無ければ、スクランブルの数を出すだけ)
 `
 
 func main() {
@@ -29,6 +30,9 @@ func main() {
 }
 
 func run(args []string) int {
+	if len(args) > 0 && args[0] == "--decode-file" {
+		return decodeFile(args[1:])
+	}
 	if len(args) > 1 {
 		fmt.Fprint(os.Stderr, usage)
 		return 2
