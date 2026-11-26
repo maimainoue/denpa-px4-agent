@@ -299,3 +299,20 @@ func TestModelOf_deviceから機種を引く(t *testing.T) {
 		}
 	}
 }
+
+func TestBuiltin_GVMVPXZは_DriverHost_PX4_のGUIDを持つ(t *testing.T) {
+	d, ok := Builtin().Get("I-O DATA GV-MVP/XZ")
+	if !ok {
+		t.Fatal("機種が無い")
+	}
+	// px4_drv の DriverHost_PX4.ini の [DeviceDefinition21] の GUID
+	if d.Host == nil || d.Host.DeviceGUID != "{9D54F32C-9BD4-4758-B0FA-3B8050CB29E0}" {
+		t.Fatalf("host = %+v", d.Host)
+	}
+	if len(d.Receivers) != 1 || d.Receivers[0].Types[0] != "GR" {
+		t.Errorf("受信機は地上波 1 基のはず: %+v", d.Receivers)
+	}
+	if r := Builtin().ModelOf("px4host:{9d54f32c-9bd4-4758-b0fa-3b8050cb29e0}:0:0"); !r.Exact || r.Models[0] != "I-O DATA GV-MVP/XZ" {
+		t.Errorf("GUID から引けない: %+v", r)
+	}
+}
