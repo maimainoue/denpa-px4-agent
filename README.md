@@ -99,8 +99,35 @@ denpa と一緒に使うときは、`deploy/compose.override.yml` を denpa の 
 - Linux の B-CAS は pcscd 経由 (`internal/pcsc`。pure Go で pcscd の socket に直接つなぐ) で使えます。内蔵リーダー (px4-drv-pcsc) は実機の pcscd 1.9.9 と B-CAS カードで確かめました。外付けリーダー (libccid) は pcscd から同じように見えるはずですが、実物では確かめていません。Windows の外付けリーダーは、OS の PC/SC (System32 の `winscard.dll`。`internal/winscard`) で使えます。`WINSCARD_DLLS` に絶対パスを書くと、別の場所の PC/SC の DLL も足せます (`;` 区切り)。実機の Windows で DLL を読んでリーダーを引くところまでは確かめました (リーダー 0 個)。Windows の CI は、Smart Card サービスが無く `SCARD_E_NO_SERVICE` になっても試験を成功にするので、一覧を引けたかは試験のログで確かめてください。外付けリーダーとカードでの復号は、まだ確かめていません。macOS の外付けリーダーは、PCSC.framework で使えます (同じ `internal/winscard`。cgo は使わず `purego` で呼びます)。macOS の CI では、PCSC.framework を読んでリーダーの一覧を引くところまでを試していて、CI のログ (`go test -v ./internal/winscard`) では、リーダー 0 個の一覧を引けました。ただし、PC/SC のサービスに繋がらなくても試験は成功にするので、CI が通っただけでは一覧を引けたとは言えません。一覧を引けたかは、試験のログで確かめてください。外付けリーダーとカードでの復号は、まだ確かめていません。PLEX の内蔵リーダーは PCSC.framework には出ません。Windows と macOS の内蔵リーダーは、DriverHost_PX4 のカードのパイプで使えます
 - 仕様書 15 章の引数 (`--tune`・`--devices`・`--card`・`--decode-file`・`--status`・`--pair`) は全部あります。`--tune` で、複数の機材を同時に選局する (`<device>+<device>`) のは、まだ対応していません (1 台ずつ指定します)。`--tune` は TS を標準出力に出すので、**Windows の PowerShell の `>` は TS を壊します** (文字コードを変えて書く)。`cmd /c "…exe --tune … > t.ts"` か、bash・zsh で使います
 - ISDB-C (`CATV`) と J.83B (`SKY`) は、chardev では `PTX_SET_SYSTEM_MODE(0x40)` + `PTX_SET_CHANNEL` (TSMF の 0 本目) と、`PTXT_SET_PARAMS` + `PTXT_TUNE` (TSMF の 1 本目以降と J.83B) で選局します。ISDB-C の映像と TSMF の 1 本目以降、J.83Bは実際の放送では確かめていません。TSMF の `X-Denpa-Tsmf-Streams` は返しません。
-- Windows と macOS の機材の自動検出 (SetupDi・IOKit) は無いので、`tuners.json` に `px4host:<GUID>:<受信機の番号>:<台目>` を手で書きます。組み込みの表で GUID を持つのは PX-W3U4 だけです
+- Windows と macOS の機材の自動検出 (SetupDi・IOKit) は無いので、`tuners.json` に `px4host:<GUID>:<受信機の番号>:<台目>` を手で書きます。組み込みの表で GUID を持つのは PX-W3U4・Sony CECH-ZD1 J・I-O DATA GV-MVP/XZ です (ほかの機種は `devices.json` の `host.deviceGuid` で足します。`DRIVER_HOST_INI` はまだ読みません)
 - MULTI2 は ARIB STD-B25 の試験ベクタで確かめていません (暗号化と復号の往復だけ)。ioctl の引数の渡し方 (`PTX_SET_SYSTEM_MODE`・`PTX_ENABLE_LNB_POWER` は値渡し) と、ECM の返り値のうち鍵を使ってよいもの (`0x0000`・`0x0200`・`0x0400`・`0x0800`) は実機で確かめます
 - 最初の TS が届く前に溜める復号の細かい決まり (`service` を付けた利用者だけの早出し、PMT が来ないときの扱い) は簡略です
 - `/denpa/card/confirm` と `/denpa/decode` の `decryptedByDevice` の 500 は返していません
-- denpa の適合テスト (`agent/conformance.test.ts`、66 件) を回しました。**Linux (WSL の Ubuntu 24.04) では 66 件全部が通ります。Windows は 62 件が通り、4 件が通りません。** 通らない 4 件は止まれの合図の試験で、Windows の `kill("SIGINT")` がプロセスをそのまま終わらせるための、試験側の差と見ています (同じエージェントが Linux では通ります)。macOS は回していません。適合テストを回すには、denpa のリポジトリで `bun install` し、`AGENT_CMD` にこのエージェントの実行ファイルを渡して `bun test agent/conformance.test.ts` を実行します (`openssl` が PATH に要ります)
+
+### denpa の適合テスト
+
+denpa のリポジトリにある `agent/conformance.test.ts` (66 件) を、このエージェントに対して回せます。付属のエージェントと入れ替えて使えること (仕様書 17.1) を確かめるものです。
+
+| 環境 | 結果 |
+| --- | --- |
+| Linux (WSL の Ubuntu 24.04) | **66 / 66 が通る** |
+| Windows | **62 / 66 が通る** (通らないのは「止まれの合図を受けたとき」の 4 件) |
+| macOS | 回していません |
+
+- **Windows の 4 件は、エージェントの不具合ではなく、試験と Bun の Windows での動きの差と見ています。** Windows の Bun の `kill("SIGTERM")`・`kill("SIGINT")` は、子プロセスを即座に強制終了します (エージェントのシグナルの処理は動きません)。しかも `exitCode` が `null` のまま (`signalCode` に入る) なので、試験の「止まったか」の判定 (`exitCode !== null`) が合いません。同じエージェントが Linux では 4 件とも通ります。直すなら試験の側 (denpa のリポジトリ) です。Windows の本物の止まれの合図 (Ctrl+C など) で正しく畳むかは、実機では確かめていません
+- **macOS では回していません。** 手元の Mac は macOS 11 で、bun は新しい macOS が前提なので、入れて試していません。macOS の CI が回すのは Go のテストだけです
+- **CI では回していません** (CI は Go のテストと、他の OS・CPU のクロスビルド)
+- 試験に合わせて決めたこと (範囲外のチャンネルを `cmd` は選局コマンドに任せて 500 にする、`PUT /denpa/tuners` が知らない形の `device` も受けて保存する、復号できなかった `/denpa/decode` を 500 にする、など) は、付属のエージェントと同じにしてあり、仕様書 7.7・9.7・10.4 に書いてあります
+
+回し方:
+
+```sh
+# 1. denpa のリポジトリで依存を入れる (bun が要る)
+cd denpa && bun install
+
+# 2. openssl が PATH に要る (試験が証明書を作る。Windows は Git for Windows の mingw64/bin など)
+
+# 3. AGENT_CMD にこのエージェントの実行ファイルを渡して回す (Windows でも「/」区切りが無難)
+AGENT_CMD=/path/to/denpa-px4-agent bun test agent/conformance.test.ts
+```
+
