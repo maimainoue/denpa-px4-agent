@@ -316,3 +316,24 @@ func TestBuiltin_GVMVPXZは_DriverHost_PX4_のGUIDを持つ(t *testing.T) {
 		t.Errorf("GUID から引けない: %+v", r)
 	}
 }
+
+func TestBuiltin_fork追加機種は_DriverHost_PX4_のGUIDから引ける(t *testing.T) {
+	// px4_drv (fork) の DriverHost_PX4.ini の GUID。HZ2W の firmware loader ({F324DD13-…}) は対象外
+	for guid, model := range map[string]string{
+		"{08546a8a-6781-4235-b778-0acdeb9ffb16}": "MyGica T230A",
+		"{F9292CE5-229D-4247-8B4C-1A5B4E250C71}": "PIXELA PIX-DT295 Rev.01",
+		"{944EE4B3-CC76-40D8-8AB6-6F33B1C6D983}": "PIXELA PIX-DT295 Rev.02",
+		"{3C0B7B52-6A59-4E83-9B0E-5E5D8C0D4A21}": "TurboSight TBS 5530",
+		"{492958E6-3D24-4895-8B1E-082A3446690F}": "I-O DATA GV-MVP/HZ2W",
+		"{A96B39EB-E5A6-4901-A859-BD974021F1F2}": "Quixun QRS-UT100B",
+		"{9DFE7ABB-8BAA-4004-9AF2-08AE5F4309B0}": "Siano RIO",
+	} {
+		r := Builtin().ModelOf("px4host:" + guid + ":0:0")
+		if !r.Exact || len(r.Models) != 1 || r.Models[0] != model {
+			t.Errorf("%s: %q のはず: %+v", guid, model, r)
+		}
+	}
+	if r := Builtin().ModelOf("px4host:{F324DD13-9113-4C45-A908-937DE7B678CE}:0:0"); len(r.Models) != 0 {
+		t.Errorf("firmware loader は引けないはず: %+v", r)
+	}
+}
