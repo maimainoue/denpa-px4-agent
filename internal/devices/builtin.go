@@ -1,8 +1,8 @@
 package devices
 
 // 組み込みの機種表 (仕様書 3.2)。host.deviceGuid は px4_drv の DriverHost_PX4.ini の値を
-// 写すものだが、ここでは PX-W3U4 しか値が仕様書に無い。ほかの機種の GUID は
-// `devices.json` か DRIVER_HOST_INI で足す。
+// 写すものだが、ここでは PX-W3U4 と Sony CECH-ZD1 J の値だけを持つ (実機で確かめたもの)。
+// ほかの機種の GUID は `devices.json` か DRIVER_HOST_INI で足す。
 
 func rx(types ...string) []string { return types }
 
@@ -70,6 +70,11 @@ func Builtin() *Defs {
 	one("TurboSight TBS 5530", "734c:5530", "tbs5530video", false, "GR", "CATV")
 	one("MyGica T230C", "0572:c68a", "px4video", false, "CATV", "SKY")
 	one("Sony CECH-ZD1 J", "054c:04b2", "tornevideo", true, "GR")
+	// Windows と macOS の DriverHost_PX4 (px4_drv の DriverHost_PX4.ini の [DeviceDefinition17]。
+	// DeviceInterfaceGUID は {38E7A8C5-27D1-440D-9BCF-83E1B20FB92F}、受信機 0 の GUID は {F41EF4C4-31A6-4044-9707-DE9DA0AF7A86})
+	if d, ok := s.Get("Sony CECH-ZD1 J"); ok {
+		d.Host = &Host{DeviceGUID: "{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}"}
+	}
 	one("PIXELA PIX-DT295 Rev.01", "06b8:103b", "dt295video", true, "GR")
 	one("PIXELA PIX-DT295 Rev.02", "06b8:105c", "dt295video", true, "GR")
 	one("I-O DATA GV-MVP/XZ", "04bb:0530", "xzvideo", true, "GR")

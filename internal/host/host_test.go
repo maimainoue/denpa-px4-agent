@@ -627,3 +627,17 @@ func TestTune_SKYは同期しなければずらした周波数でもう一度(t 
 		t.Errorf("H11 2 回駄目: TUNE %d 回 (want 2 回)", tunes)
 	}
 }
+
+func TestOpen_SonyCECHZD1Jは組み込みのGUIDで開ける(t *testing.T) {
+	const guidZD1J = "{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}"
+	for _, l := range []Layout{LayoutWindows, LayoutMac} {
+		tn, _ := newTuner(t, l, "torne", "px4host:"+guidZD1J+":0:0")
+		if r, ok := tn.(backend.Receivabler); !ok || len(r.Receivable()) != 1 || r.Receivable()[0] != "GR" {
+			t.Errorf("地上波だけを受けるはず: %v", tn)
+		}
+	}
+	// 受信機は 1 基だけ
+	if _, err := Open(devices.Builtin(), &fakeTr{&fakeHost{l: LayoutWindows}}, nil, backend.TunerSpec{Name: "x", Device: "px4host:" + guidZD1J + ":1:0"}); err == nil {
+		t.Error("受信機 1 は無いのに開けた")
+	}
+}
