@@ -2,6 +2,7 @@ package app
 
 import (
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/backend"
+	"github.com/denpa-px4-agent/denpa-px4-agent/internal/backend/cmdbackend"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/card"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/cardshare"
 	"github.com/denpa-px4-agent/denpa-px4-agent/internal/config"
@@ -68,4 +69,14 @@ func ListDevices(cfg *config.Config, log *logx.Logger) DevicesReport {
 		rep.Models = append(rep.Models, defs.ModelOf(s.Device))
 	}
 	return rep
+}
+
+// OpenTuner は、サーバを立てずに機材を 1 台開く (`--tune`)。device の解釈と開き方は、サーバと同じ。
+// spec.Name は記録に出る名前、spec.Lnb は衛星のときの給電 ("15v" か "11v"、空なら無し)。
+// 閉じるのは呼ぶ側 (Stop と Close)。
+func OpenTuner(cfg *config.Config, log *logx.Logger, spec backend.TunerSpec) (backend.Tuner, error) {
+	defs := LoadDefs(cfg, log)
+	env := &Env{Cfg: cfg, Defs: defs, Log: log.Printf}
+	cmd := cmdbackend.New(cmdbackend.Config{Defs: defs, FakeTune: cfg.FakeTune, Log: log.Printf})
+	return openBackend(env, cmd, spec)
 }

@@ -1,7 +1,7 @@
 package devices
 
 // 組み込みの機種表 (仕様書 3.2)。host.deviceGuid は px4_drv の DriverHost_PX4.ini の値を
-// 写すものだが、ここでは PX-W3U4 と Sony CECH-ZD1 J の値だけを持つ (実機で確かめたもの)。
+// 写すものだが、ここでは PX-W3U4・Sony CECH-ZD1 J・I-O DATA GV-MVP/XZ の値だけを持つ (実機で確かめたもの)。
 // ほかの機種の GUID は `devices.json` か DRIVER_HOST_INI で足す。
 
 func rx(types ...string) []string { return types }
@@ -78,6 +78,10 @@ func Builtin() *Defs {
 	one("PIXELA PIX-DT295 Rev.01", "06b8:103b", "dt295video", true, "GR")
 	one("PIXELA PIX-DT295 Rev.02", "06b8:105c", "dt295video", true, "GR")
 	one("I-O DATA GV-MVP/XZ", "04bb:0530", "xzvideo", true, "GR")
+	// DriverHost_PX4.ini の [DeviceDefinition21] (受信機 0 の GUID は {A3C846A3-9E77-4631-BCF7-91CBBA3E54D1})
+	if d, ok := s.Get("I-O DATA GV-MVP/XZ"); ok {
+		d.Host = &Host{DeviceGUID: "{9D54F32C-9BD4-4758-B0FA-3B8050CB29E0}"}
+	}
 	one("Siano RIO", "3275:0080", "px4video", false, "GR")
 
 	// Sony nasne (HTTP) は仕様書 6.5 の置き方 A。devices.json を書かなくても tuners.json だけで使える。

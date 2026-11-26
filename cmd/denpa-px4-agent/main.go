@@ -17,13 +17,15 @@ import (
 // version は -ldflags "-X main.version=…" で入れる。
 var version = "dev"
 
-const usage = `使い方: denpa-px4-agent [--version | --pair | --status | --devices | --card | --decode-file <in.ts> [<out.ts>]]
+const usage = `使い方: denpa-px4-agent [--version | --pair | --status | --devices | --card | --tune ... | --decode-file <in.ts> [<out.ts>]]
   (無し)     サーバとして動く
   --version  バージョンを出して終わる
   --pair     組むときの URL を標準出力に出して終わる
   --status   動いているエージェントの /denpa/tuners を出して終わる (繋がらなければ 1)
   --devices  機材の定義と、いま見つかっている機材を並べて終わる
   --card     カードリーダーを並べ、カードを開いて INT と IDI の結果を出す (サーバを止めて)
+  --tune <device> <channel[,channel…]> [--lnb 15v] [--decode] [--card-url <url>] [--seconds N]
+             サーバを立てずに選局して、TS を標準出力へ (測定の結果は標準エラー)
   --decode-file <in.ts> [<out.ts>]  ファイルを復号する (out が無ければ、スクランブルの数を出すだけ)
 `
 
@@ -34,6 +36,9 @@ func main() {
 func run(args []string) int {
 	if len(args) > 0 && args[0] == "--decode-file" {
 		return decodeFile(args[1:])
+	}
+	if len(args) > 0 && args[0] == "--tune" {
+		return tuneCmd(args[1:])
 	}
 	if len(args) == 1 && args[0] == "--devices" {
 		return devicesCmd()

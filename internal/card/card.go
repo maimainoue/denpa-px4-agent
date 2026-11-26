@@ -847,24 +847,49 @@ func (s DecodeStats) Decoded() int64 {
 // 残ったものが、復号できた数の 1% を超えたら失敗とする (付属のエージェントと同じ)。
 func (s DecodeStats) Failed() bool { return s.Remaining*100 > s.Decoded() }
 
-// DecodeStream は src の TS を復号して dst に書く。EMM は渡さない。数えを返す (成否は Failed で見る)。
-func (m *Manager) DecodeStream(src io.Reader, dst io.Writer) (DecodeStats, error) {
+// Decoder は TS の流れを復号する (`--decode-file`・`--tune --decode`)。EMM は渡さない。
+// 塊を Write で渡すと、復号できたぶんが返る (境目は中で揃える)。終わったら Flush で残りを受ける。
+type Decoder struct {
+	s             *b25.Stream
+	before, after tscCounter // 入力でスクランブルされていた数と、出力に残った数
+	written       int64
+}
+
+// NewDecoder は復号を作る。選局ごと・ファイルごとに 1 つ。
+func (m *Manager) NewDecoder() *Decoder {
 	s := b25.NewStream(emmDiscard{m}, m.log)
 	s.SetDecrypt(true)
-	var before, after tscCounter // 入力でスクランブルされていた数と、出力に残った数
-	var written int64
-	write := func(b []byte) error {
-		after.add(b)
-		n, err := dst.Write(b)
-		written += int64(n)
-		return err
-	}
+	return &Decoder{s: s}
+}
+
+// Write は塊を渡して、復号できたぶんを返す。
+func (d *Decoder) Write(chunk []byte) []byte {
+	d.before.add(chunk)
+	return d.out(d.s.Process(chunk))
+}
+
+// Flush は終わりまで来たとき、溜めているぶんを返す。
+func (d *Decoder) Flush() []byte { return d.out(d.s.Flush()) }
+
+func (d *Decoder) out(b []byte) []byte {
+	d.after.add(b)
+	d.written += int64(len(b))
+	return b
+}
+
+// Stats は数え。
+func (d *Decoder) Stats() DecodeStats {
+	return DecodeStats{Bytes: d.written, Packets: d.before.total, Scrambled: d.before.n, Remaining: d.after.n}
+}
+
+// DecodeStream は src の TS を復号して dst に書く。EMM は渡さない。数えを返す (成否は Failed で見る)。
+func (m *Manager) DecodeStream(src io.Reader, dst io.Writer) (DecodeStats, error) {
+	d := m.NewDecoder()
 	buf := make([]byte, 188*1024)
 	for {
 		n, rerr := src.Read(buf)
 		if n > 0 {
-			before.add(buf[:n])
-			if err := write(s.Process(buf[:n])); err != nil {
+			if _, err := dst.Write(d.Write(buf[:n])); err != nil {
 				return DecodeStats{}, err
 			}
 		}
@@ -875,10 +900,10 @@ func (m *Manager) DecodeStream(src io.Reader, dst io.Writer) (DecodeStats, error
 			return DecodeStats{}, rerr
 		}
 	}
-	if err := write(s.Flush()); err != nil {
+	if _, err := dst.Write(d.Flush()); err != nil {
 		return DecodeStats{}, err
 	}
-	return DecodeStats{Bytes: written, Packets: before.total, Scrambled: before.n, Remaining: after.n}, nil
+	return d.Stats(), nil
 }
 
 // ObserveTS は復号せずに、パケットとスクランブルされたパケットの数を数える。
