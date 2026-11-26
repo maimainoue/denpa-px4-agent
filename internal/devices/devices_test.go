@@ -236,3 +236,20 @@ func TestFake_FAKE_TUNEは引数つきのコマンドラインも受ける(t *te
 		t.Errorf("空白を含むパスを分けました: %q", got)
 	}
 }
+
+func TestBuiltin_SonyCECHZD1Jは_DriverHost_PX4_のGUIDを持つ(t *testing.T) {
+	d, ok := Builtin().Get("Sony CECH-ZD1 J")
+	if !ok {
+		t.Fatal("機種が無い")
+	}
+	// px4_drv の DriverHost_PX4.ini の [DeviceDefinition17] の GUID
+	if d.Host == nil || d.Host.DeviceGUID != "{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}" {
+		t.Fatalf("host = %+v", d.Host)
+	}
+	if len(d.Receivers) != 1 || d.Receivers[0].Index != 0 || len(d.Receivers[0].Types) != 1 || d.Receivers[0].Types[0] != "GR" {
+		t.Errorf("受信機は地上波 1 基のはず: %+v", d.Receivers)
+	}
+	if !d.CardReader {
+		t.Error("内蔵のカードリーダーがあるはず")
+	}
+}

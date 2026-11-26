@@ -159,7 +159,7 @@ type Tuner interface {
 
 nasne (HTTP) は px4_drv の機種ではなく、`cmd` バックエンドの組み込みです ([6.5](#65-sony-nasne-sonynasne-debian-の-nasne-recpt1))。
 
-`host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
+`host.deviceGuid` は px4_drv の `DriverHost_PX4.ini` の値を組み込みの表に写します (いま組み込みで持つのは、PX-W3U4 と Sony CECH-ZD1 J です。後者は `{D3C0AEC3-0FC9-4769-8513-8323CEFD792F}`、受信機は地上波 1 基で、Windows の実機で確かめました)。同じ ini を `DRIVER_HOST_INI` で読ませれば、そこにある定義 (`VendorId`・`ProductId`・`GUID`・`Receiver*`) から項目を作ることもできます。優先は `devices.json` → `DRIVER_HOST_INI` → 組み込みの順です。
 
 - Windows と macOS では、DriverHost_PX4 の定義に無い機種は開けません。足すときは DriverHost_PX4.ini と `devices.json` の両方に書きます
 - Linux では、px4_drv が `/dev/<devname><N>` を作る機種だけが開けます。`devices.json` に足すのは、fork に新しい機種を足したときと、`types` を変えたいときです
