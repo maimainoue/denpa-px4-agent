@@ -195,3 +195,17 @@ func TestDetect_インターフェースの列挙だけが失敗したら_USBに
 		t.Errorf("エラーになるはず: %v (logs %v)", err, logs)
 	}
 }
+
+func TestDetect_WinUSBが入っていない対象外の機材も_対象外に数える(t *testing.T) {
+	// PX-W3U4 が USB には 1 台見えるが WinUSB が無い (InterfacePaths は空)。既定では対象外なので、並べず、警告も出さず、対象外に 1 台と数える
+	en := fakeEnum{iface: map[string][]string{}, usb: []string{usbPath("0511", "083f", "a")}}
+	defs := devices.Builtin()
+	var logs []string
+	got, err := Detect(defs, en, func(f string, a ...any) { logs = append(logs, f) })
+	if err != nil || len(got) != 0 || len(logs) != 0 {
+		t.Fatalf("got=%+v err=%v logs=%v", got, err, logs)
+	}
+	if sk := defs.Skipped(); len(sk) != 1 || sk[0].Model != "PLEX PX-W3U4" || sk[0].N != 1 {
+		t.Errorf("対象外に 1 台のはず: %v", sk)
+	}
+}

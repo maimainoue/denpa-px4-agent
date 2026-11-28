@@ -104,7 +104,8 @@ func Detect(defs *devices.Defs, en Enumerator, log backend.Logf) ([]backend.Tune
 		}
 		// denpa が対応している機種は、DETECT_INCLUDE で選ばれない限り、自動検出の対象にしない
 		if !defs.Detectable(&d) {
-			for k := 1; k <= n; k++ {
+			// WinUSB が入っていない機材も、見えている以上は対象外として数える (警告は出さない。使わない機種なので)
+			for k := 1; k <= max(n, nUSB); k++ {
 				defs.SkipDetect(d.Model, fmt.Sprintf("%s:%d", d.Host.DeviceGUID, k))
 			}
 			continue
