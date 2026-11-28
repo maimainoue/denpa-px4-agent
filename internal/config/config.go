@@ -20,6 +20,10 @@ type Config struct {
 	Name      string
 	Home      string
 
+	// DetectInclude は DETECT_INCLUDE (カンマ区切り)。自動検出の対象から外している、denpa が対応している機種を、
+	// 機種名 (か `denpa` で全部) で対象にする。空なら、denpa が対応している機種は自動検出しない
+	DetectInclude []string
+
 	TunersFile   string
 	ChannelsFile string
 	DevicesFile  string
@@ -143,6 +147,7 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 	c.DriverHostPath = def(getenv("DRIVER_HOST_PATH"), filepath.Join(filepath.Dir(exe), hostName))
 	c.DriverHostIni = def(getenv("DRIVER_HOST_INI"), filepath.Join(filepath.Dir(c.DriverHostPath), "DriverHost_PX4.ini"))
 	c.FakeTune = getenv("FAKE_TUNE")
+	c.DetectInclude = ParseList(getenv("DETECT_INCLUDE"))
 	q, err := intVar(getenv, "STREAM_QUEUE_BYTES", 0, 0, 1<<31-1)
 	if err != nil {
 		return nil, err
@@ -152,6 +157,17 @@ func Load(getenv func(string) string, goos string, exe string) (*Config, error) 
 	}
 	c.StreamQueueBytes = int64(q)
 	return c, nil
+}
+
+// ParseList はカンマ区切りを分ける。前後の空白と空の要素は捨てる。
+func ParseList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // ParseWinscardDLLs は WINSCARD_DLLS (`;` 区切りの絶対パス) を分ける。空の要素は飛ばし、

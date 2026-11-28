@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ChannelFormat はチャンネル名の直し方 (6.2)。
@@ -45,6 +46,9 @@ type Def struct {
 	LNB          []int `json:"lnb,omitempty"`
 	CardReader   bool  `json:"cardReader,omitempty"`
 	PairBySerial bool  `json:"pairBySerial,omitempty"`
+	// Denpa は denpa 付属のエージェントが自分で開く機種。自動検出の既定の対象から外す (DETECT_INCLUDE で対象にできる)。
+	// 組み込みの機種は、USB の ID で印を付ける。devices.json では、書いたとおりになる (書かなければ偽)
+	Denpa bool `json:"denpa,omitempty"`
 
 	// cmd バックエンド (6.1)
 	Command []string `json:"command,omitempty"`
@@ -72,7 +76,10 @@ type Linux struct {
 
 // Host は host の項目。
 type Host struct {
-	DeviceGUID    string   `json:"deviceGuid"`
+	DeviceGUID string `json:"deviceGuid"`
+	// InterfaceGUID は DriverHost_PX4.ini の `DeviceInterfaceGUID`。WinUSB が入っている機材を数える鍵 (Windows の自動検出)。
+	// 書かなければ、USB の ID (`usb`) だけで数える
+	InterfaceGUID string   `json:"interfaceGuid,omitempty"`
 	ReceiverGUIDs []string `json:"receiverGuids,omitempty"`
 }
 
@@ -201,6 +208,11 @@ func Fake(path string) Def {
 // Defs は機材の定義の表。定義の順を保つ。
 type Defs struct {
 	list []Def
+
+	mu           sync.Mutex // 以下は、検出 (別の goroutine) と --devices から触る
+	include      map[string]bool
+	includeDenpa bool
+	skipped      map[string]map[string]struct{}
 }
 
 // NewDefs は空の表を作る。

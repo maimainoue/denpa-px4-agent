@@ -130,6 +130,8 @@ type Tuner interface {
 | `usb`                | USB の ID (`vvvv:pppp`)。Linux では sysfs の `idVendor:idProduct`、macOS では IOKit の照合に使う。複数書ける                                                                       |
 | `linux.devname`      | Linux のデバイスファイルの名前の先頭 (`px4video` なら `/dev/px4video<N>`)。sysfs のクラスは `devname` から `video` を除いたもの (`px4`)                                              |
 | `host.deviceGuid`    | DriverHost_PX4.ini の `[DeviceDefinitionN]` の `GUID`。Windows と macOS で OPEN の鍵にする。`host.receiverGuids` に受信機ごとの `GUID` を書いてもよい (書かなければ `index` で開く) |
+| `denpa`              | 省略可 (既定は偽)。denpa 付属のエージェントが自分で開く機種。真なら、自動検出の既定の対象から外す (環境変数 `DETECT_INCLUDE` で対象にできる)。組み込みの機種は USB の ID で印を付ける (3.3)。`devices.json` で機種を書き直したときは、書いたとおり (書かなければ偽) |
+| `host.interfaceGuid` | 省略可。同じ `[DeviceDefinitionN]` の `DeviceInterfaceGUID`。Windows の自動検出が、WinUSB の入っている機材を数える鍵にする (5.3)。無ければ `usb` だけで数える |
 | `receivers`          | 受信機の並び。`index` は筐体の中の番号 (Linux はデバイスファイルの番号の順、host は定義の `Index`)。`types` はその受信機が受けられる種別                                           |
 | `receivers[].systems` | 省略可。host の OPEN に渡す方式 (`ISDB-T`・`ISDB-S`・`ISDB-C`・`J.83B`)。無ければ `types` から決める (`GR`→ISDB-T、`BS`/`CS`→ISDB-S、`CATV`→ISDB-C、`SKY`→J.83B)                 |
 | `lnb`                | 給電できる電圧の一覧 (`[15]`、`[11, 15]`、`[]`)。無い電圧を設定に書かれたら衛星の選局を断る                                                                                        |
@@ -164,6 +166,16 @@ nasne (HTTP) は px4_drv の機種ではなく、`cmd` バックエンドの組�
 - Windows と macOS では、DriverHost_PX4 の定義に無い機種は開けません。足すときは DriverHost_PX4.ini と `devices.json` の両方に書きます
 - Linux では、px4_drv が `/dev/<devname><N>` を作る機種だけが開けます。`devices.json` に足すのは、fork に新しい機種を足したときと、`types` を変えたいときです
 
+### 3.3 denpa が対応している機種
+
+denpa 付属のエージェントは、IT930x の機材などを USB で直に開きます。同じ機材をこのエージェントも自動検出で並べると、2 つのエージェントが同じ機材を取り合うので、**denpa が自分で開く機種は、自動検出の既定の対象から外します** (Linux の chardev、Windows の SetupAPI、macOS の IOKit のどれも)。
+
+- 外すのは、自動検出だけです。`tuners.json` に書いた機材は、書いた時点で明示しているので、いつも対象です
+- 対象にするには、環境変数 `DETECT_INCLUDE` に、機種名 (大文字・小文字は区別しない) をカンマ区切りで書きます。`denpa` と書くと、この印の付いた機種を全部対象にします。機種表に無い名前は、書き損じとして記録に出します
+- 機種の定義の `denpa` で、機種ごとの既定を決めます。組み込みの機種は、denpa の `agent/Denpa.Agent` (`It930x.cs`・`Siano.cs`・`WinUsbTargets.cs`・`Dt295.cs`) にある USB の ID で印を付けます: IT930x の `0511:084e`・`024e`・`924e`・`083f`・`023f`・`073f`・`084a`・`024a`・`074a`・`0253`・`0252`・`0254`・`004b`・`084b`・`0854`・`0855`・`0052` (PLEX・e-Better・Digibest)、`3275:0080` (PX-S1UD)、`054c:04b2` (Sony CECH-ZD1 J)、`Dt295.cs` の `06b8:103b`・`105c` (PIX-DT295 Rev.01・Rev.02。`103c`・`1038`・`1039` は denpa も未確認として断るので印を付けません)。denpa の対応が増えたら、手で足します
+- `--devices` は、外した機材を「denpa が対応している機種なので、自動検出の対象外」に機種ごとの台数で出し、`DETECT_INCLUDE` の中身も出します。サーバは、外した機材が変わったときに、記録に 1 行出します
+- **Linux では、`px4_drv` が chardev を作るのは、denpa 付属のエージェントが開けない状態** なので、PLEX の機材は既定では並びません。使うときは `DETECT_INCLUDE=denpa` (か機種名) を書きます
+
 ## 4. Linux: px4_drv のデバイスファイル
 
 ### 4.1 デバイスファイルと受信機
@@ -182,6 +194,8 @@ px4_drv は、機種ごとの名前のデバイスファイルを受信機の数
 2. それぞれ `/sys/class/<クラス>/<名前>/device` の先を読む。クラスはデバイスファイルの名前から `video` を除いたもの (`px4video0` なら `/sys/class/px4/px4video0`、`pxmlt5video0` なら `/sys/class/pxmlt5/pxmlt5video0`)。先は USB インターフェースのディレクトリで、その親が USB デバイス。`idVendor`・`idProduct`・`serial`・`busnum`・`devpath` を読む
 3. USB デバイスごとに受信機をまとめ、デバイスファイルの番号順に `#0` から番号を振る。機種は `idVendor:idProduct` を機材の定義の `usb` と突き合わせて決める (同じ `devname` に機種が複数あるときのため。`px4video` は PX4 系が使う)
 4. `pairBySerial` の機種は、`serial` の先頭 14 桁が同じで末尾が `1` と `2` の 2 つの USB デバイスを同じ筐体にする。末尾 `1` の側を先に並べ、`#0`〜`#3` と `#4`〜`#7` にする。片方しか無ければ、その側だけを並べる
+
+**denpa が対応している機種は、自動検出の対象から外します** (3 の機種を決めたあと。5.3 の host も同じ。3.3)。
 
 sysfs が読めなければ (権限、コンテナで `/sys` が無い)、デバイスファイルの名前だけで機種を決め (`devname` が 1 機種に決まるときだけ)、番号は名前の数字のままにします。
 
@@ -306,8 +320,8 @@ TS のパイプの `DataCmd` (8 バイト): `cmd u32` (`SET_DATA_ID` 1・`PURGE`
 
 DriverHost_PX4 には受信機を並べるコマンドが無いので、USB を自分で数えます。
 
-- Windows: 機材の定義の `host.deviceGuid` に対応する DriverHost_PX4.ini の `DeviceInterfaceGUID` を `DRIVER_HOST_INI` から読み、`SetupDiGetClassDevsW(guid, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT)` と `SetupDiEnumDeviceInterfaces` で挿さっている数を数える (DriverHost_PX4 の `DeviceManager::Search` と同じ)。`DRIVER_HOST_INI` が無ければ、`SetupDiGetClassDevsW(GUID_DEVINTERFACE_USB_DEVICE)` で USB デバイスを並べ、ハードウェア ID の `VID_xxxx&PID_xxxx` を `usb` と突き合わせる
-- macOS: IOKit (`IOServiceMatching("IOUSBDevice")` に `idVendor`・`idProduct`) で数える。`USB Serial Number` も読む
+- Windows (実装済み。`internal/host/detect.go` と `enum_windows.go`): 機材の定義の `host.interfaceGuid` (DriverHost_PX4.ini の `DeviceInterfaceGUID` の写し) を鍵に、`SetupDiGetClassDevsW(guid, DIGCF_DEVICEINTERFACE | DIGCF_PRESENT)` と `SetupDiEnumDeviceInterfaces` で挿さっている数を数える (DriverHost_PX4 の `DeviceManager::Search` と同じ。WinUSB が入っている機材だけが数えられる)。あわせて、`SetupDiGetClassDevsW(GUID_DEVINTERFACE_USB_DEVICE)` で USB デバイスを並べ、デバイスパスの `vid_xxxx&pid_xxxx` を `usb` と突き合わせる。USB の数のほうが多ければ、WinUSB ドライバーが入っていない機材があるので、警告を出す (並べない)。`interfaceGuid` を持たない機種 (`devices.json` で足した機種など) は、USB の数だけで並べる。受信機の無い機種 (内蔵カードだけ) は並べない。`DRIVER_HOST_INI` は読まない
+- macOS (実装済み。`internal/host/enum_darwin.go`): IOKit (`IOServiceMatching("IOUSBHostDevice")`、purego で呼ぶ。cgo は使わない) で USB デバイスを並べ、`idVendor`・`idProduct` を `usb` と突き合わせる。`IOUSBDevice` (互換用の `AppleUSBDevice`) は、同じ機材が二重に出るので使わない (macOS 11 以降は `IOUSBHostDevice` で 1 台 1 件)。DriverHost_PX4 は libusb で機材を見るのでドライバーの区別は無く、`host.interfaceGuid` は使わない (USB の数だけで並べる)。実機 (macOS 11.7・x86_64) で、CECH-ZD1 J・PIX-DT295 Rev.01・GV-MVP/XZ が 1 台ずつ見えることを確かめた
 - 機種 1 つにつき、挿さっている台数 × 受信機の数のチューナーを並べる。名前は `<機種名> #<受信機>`、2 台目以降は `<機種名> (2) #<受信機>`
 - `device` は `px4host:<機種の GUID>:<受信機の index>:<台目>` (`px4host:{aa8de3fc-…}:2:1`)
 - **同じ機種が 2 台あるとき、どちらの筐体の受信機を開くかは DriverHost_PX4 が決めます** (OPEN は条件に合う空いている最初の受信機を返す)。チューナーの名前と筐体は結び付きません。PX-Q3 系も 2 つの USB デバイスを区別しません。LNB の給電は開いた受信機の筐体に効きます
@@ -913,6 +927,7 @@ denpa の付属のエージェントと同じ wire です。配る側 (`CARD_SHA
 | `CARD_URL`                                                                    | (空)                                                           | 鍵を貰う先 (配る側の `CARD_SHARE_PORT`)。書くと手元のカードを使わない                              |
 | `CARD_SHARE_PORT` / `CARD_SHARE_NETWORKS` / `CARD_TTL` / `CARD_SHARE_MAX_RTT` | 配らない                                                       | [9.5](#95-鍵を配る貰う)                                                                            |
 | `PCSCLITE_CSOCK_NAME`                                                         | `/run/pcscd/pcscd.comm`                                        | Linux の pcscd の socket                                                                           |
+| `DETECT_INCLUDE`                                                              | (空。denpa が対応している機種は自動検出しない)                  | 自動検出の対象にする、denpa が対応している機種の名前をカンマ区切りで書く。`denpa` で全部 (3.3) |
 | `WINSCARD_DLLS`                                                               | (空。System32 の `winscard.dll` だけ)                           | Windows で、System32 のあとに足す PC/SC の DLL。絶対パスを `;` で区切る。相対パスなら起動しない ([9.1](#91-カードリーダー)) |
 | `PX4_RUNTIME_DIR`                                                             | `/tmp`                                                         | macOS の DriverHost_PX4 の socket の置き場                                                         |
 | `DRIVER_HOST_PATH`                                                            | 実行ファイルの隣の `DriverHost_PX4.exe`                        | Windows で DriverHost_PX4 を起動するときのパス                                                     |
@@ -974,7 +989,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 | `--version`                                           | バージョンを出して終わる                                                                                                  |
 | `--pair`                                              | 組むときの URL を標準出力に出して終わる (鍵と合言葉が無ければ作る。メッセージは標準エラー)                                 |
 | `--status`                                            | 動いているエージェントに自分の証明書で繋ぎ、`/denpa/tuners` の JSON をそのまま出す。繋がらなければ理由を出して 1          |
-| `--devices`                                           | 機材の定義 (組み込み + `devices.json`。機種・経路 (`chardev`・`host`・`cmd`・`http`)・USB・受信機・LNB・カード・DriverHost_PX4 の GUID) と、いま見つかっている機材 (自動検出。Linux の chardev だけ。Windows と macOS は無い旨を出す)、`tuners.json` の中身 (名前・**機種**・受信機の番号・種別・`device`・備考) を並べて終わる。機種は `device` から引く: `px4host:` は GUID、`cmd:` は最長一致の機種名、`px4:` は devname (複数の機種が共有するときは 1 つに決めず、先頭 3 つと「ほか」で候補を出す)。引けなければ理由を備考に出す。機材は開かない。`DRIVER_HOST_INI` はまだ読まない |
+| `--devices`                                           | 機材の定義 (組み込み + `devices.json`。機種・経路 (`chardev`・`host`・`cmd`・`http`)・USB・受信機・LNB・カード・DriverHost_PX4 の GUID) と、いま見つかっている機材 (自動検出。Linux の chardev・Windows の SetupAPI・macOS の IOKit。denpa が対応している機種は外して、台数を出す)、`tuners.json` の中身 (名前・**機種**・受信機の番号・種別・`device`・備考) を並べて終わる。機種は `device` から引く: `px4host:` は GUID、`cmd:` は最長一致の機種名、`px4:` は devname (複数の機種が共有するときは 1 つに決めず、先頭 3 つと「ほか」で候補を出す)。引けなければ理由を備考に出す。機材は開かない。`DRIVER_HOST_INI` はまだ読まない |
 | `--tune <device> <channel[,channel…]> [--lnb 15v] [--decode] [--card-url <url>] [--seconds N]` | サーバを立てずに選局して、TS を標準出力へ出す。実機で確かめる入口。`channel` は「,」で並べると 1 つずつ選局する (1 つが失敗しても、あとは続ける)。`--seconds` は、最初の TS が来てから読む秒数 (既定 10、1〜3600。最初の TS が 30 秒来なければ、そのチャンネルは失敗)。`--decode` で復号も (EMM は渡さない。4K の TLV は復号せずに出す)。`--card-url` は `CARD_URL` と同じ。標準出力が端末のときは、TS を捨てて、測定の結果だけを出す。測定の結果 (最初の TS までの時間・量と速さ・パケット数・同期はずれ・TEI・連続性カウンタの不連続・スクランブルの割合・C/N・復号した数) は標準エラーに出す。終了コードは、全部のチャンネルで TS が来れば 0 (`--decode` では、残りが復号できた数の 1% 以内)、1 つでも失敗すれば 1、引数の誤りは 2。**`<device>+<device>` の同時選局は、まだ対応していない** (引数の誤りで 2) |
 | `--decode-file <in.ts> [<out.ts>]`                    | ファイルを復号する。`out` が無ければ復号せず、スクランブルされたパケットの数と割合だけを出す (カードには触らない)。`out` があれば復号して書き、書き出す先がもうあれば断る (上書きしない)。残りが復号できた数の 1% を超えたら (`/denpa/decode` と同じ判定) 出力を消して 1 で終わる。`CARD_URL` を書けば鍵を貰う。置き場 (`RAW_DIR`) の制限は受けない。結果は標準出力、記録は標準エラー |
 | `--card`                                              | リーダーを並べ (内蔵 → 外付け)、1 つずつ開いて INT と IDI の結果 (B-CAS か A-CAS・`CA_system_id`・カード ID) を出す。**カードは排他で開くので、サーバを止めてから使う** (動いていると共有違反でそのリーダーの理由が出る)。使わない設定 (`cards.json`) のリーダーも確かめる。1 つでも読めれば 0、リーダーが無い・1 つも読めなければ 1。カード ID は個人情報なので、貼るときは気をつける |

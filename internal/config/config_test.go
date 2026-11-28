@@ -201,3 +201,13 @@ func TestLoad_WINSCARD_DLLS(t *testing.T) {
 		}
 	}
 }
+
+func TestParseList_DETECT_INCLUDE_はカンマで分ける(t *testing.T) {
+	got := ParseList(" PLEX PX-W3U4 , ,denpa,")
+	if len(got) != 2 || got[0] != "PLEX PX-W3U4" || got[1] != "denpa" {
+		t.Fatalf("got = %q", got)
+	}
+	if ParseList("") != nil {
+		t.Error("空なら nil のはず")
+	}
+}

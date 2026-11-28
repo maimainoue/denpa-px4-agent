@@ -16,8 +16,6 @@ import (
 // DevicePrefix は tuners.json の device の接頭辞。
 const DevicePrefix = "px4:"
 
-var detectTypes = []string{"GR", "BS", "CS"}
-
 // devfile は /dev の 1 つのデバイスファイル。
 type devfile struct {
 	name string // px4video0
@@ -66,6 +64,19 @@ func Detect(defs *devices.Defs, devDir, sysDir string) ([]backend.TunerSpec, err
 	for _, f := range files {
 		f.usb = readUSB(sysDir, f.name)
 		f.def = pickDef(all, f)
+		// denpa が対応している機種は、DETECT_INCLUDE で選ばれない限り、自動検出の対象にしない
+		if f.def != nil && !defs.Detectable(f.def) {
+			// 数えるのは筐体 (受信機のファイルではない)。後のグループ化と同じ鍵を使う
+			id := f.name
+			switch {
+			case f.usb != nil && f.def.PairBySerial:
+				id = "pair:" + serialBase(f.usb.serial)
+			case f.usb != nil:
+				id = f.usb.key
+			}
+			defs.SkipDetect(f.def.Model, id)
+			f.def = nil
+		}
 	}
 
 	type housing struct {
@@ -138,13 +149,7 @@ func specFor(def *devices.Def, port string, idx int, f *devfile, fallback bool) 
 	}
 	types := []string{}
 	if len(def.Receivers) > 0 {
-		for _, t := range detectTypes {
-			for _, rt := range def.Receivers[idx%len(def.Receivers)].Types {
-				if t == rt {
-					types = append(types, t)
-				}
-			}
-		}
+		types = devices.DetectedTypes(def.Receivers[idx%len(def.Receivers)].Types)
 	}
 	return backend.TunerSpec{Name: name, Types: types, Device: DevicePrefix + "/dev/" + f.name}
 }
