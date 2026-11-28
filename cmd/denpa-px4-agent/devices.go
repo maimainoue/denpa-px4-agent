@@ -30,9 +30,9 @@ func devicesCmd() int {
 func printDevices(w io.Writer, rep app.DevicesReport) {
 	fmt.Fprintf(w, "機材の定義 (%d 機種)\n", len(rep.Defs))
 	tw := &table{}
-	tw.row("機種", "経路", "USB", "受信機", "LNB", "カード", "DriverHost_PX4 の GUID")
+	tw.row("機種", "経路", "USB", "受信機", "LNB", "カード", "denpa", "DriverHost_PX4 の GUID")
 	for _, d := range rep.Defs {
-		tw.row(d.Model, routesOf(d), dash(strings.Join(d.USB, ",")), receiversOf(d), lnbOf(d), cardOf(d), hostGUID(d))
+		tw.row(d.Model, routesOf(d), dash(strings.Join(d.USB, ",")), receiversOf(d), lnbOf(d), cardOf(d), denpaOf(d), hostGUID(d))
 	}
 	tw.flush(w)
 
@@ -48,6 +48,15 @@ func printDevices(w io.Writer, rep app.DevicesReport) {
 	}
 	for _, e := range rep.DetectErrs {
 		fmt.Fprintf(w, "  探せません: %s\n", e)
+	}
+	if len(rep.Skipped) > 0 {
+		fmt.Fprintln(w, "\ndenpa が対応している機種なので、自動検出の対象外 (対象にするなら、環境変数 DETECT_INCLUDE に機種名か denpa を書く)")
+		for _, m := range rep.Skipped {
+			fmt.Fprintf(w, "  %s ×%d\n", m.Model, m.N)
+		}
+	}
+	if len(rep.Include) > 0 {
+		fmt.Fprintf(w, "\nDETECT_INCLUDE: %s\n", strings.Join(rep.Include, ", "))
 	}
 
 	fmt.Fprintf(w, "\ntuners.json (%s)\n", rep.TunersFile)
@@ -226,4 +235,12 @@ func hostGUID(d devices.Def) string {
 		return "-"
 	}
 	return d.Host.DeviceGUID
+}
+
+// denpaOf は、denpa 自身が対応している機種かどうか (自動検出の既定では対象外。DETECT_INCLUDE で対象にできる)。
+func denpaOf(d devices.Def) string {
+	if d.Denpa {
+		return "対応"
+	}
+	return "-"
 }

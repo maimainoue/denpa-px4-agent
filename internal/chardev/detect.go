@@ -66,6 +66,11 @@ func Detect(defs *devices.Defs, devDir, sysDir string) ([]backend.TunerSpec, err
 	for _, f := range files {
 		f.usb = readUSB(sysDir, f.name)
 		f.def = pickDef(all, f)
+		// denpa が対応している機種は、DETECT_INCLUDE で選ばれない限り、自動検出の対象にしない
+		if f.def != nil && !defs.Detectable(f.def) {
+			defs.SkipDetect(f.def.Model, f.name)
+			f.def = nil
+		}
 	}
 
 	type housing struct {

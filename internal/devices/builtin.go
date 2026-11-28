@@ -124,5 +124,6 @@ func Builtin() *Defs {
 		Receivers:     recv(rx("GR", "BS", "CS")),
 		LNB:           []int{},
 	})
+	markDenpa(s)
 	return s
 }

@@ -12,6 +12,7 @@
 - Sony nasne ([SonyNasne-debian](https://github.com/mar1mo-41414/SonyNasne-debian) の `nasne-recpt1`) も使える。別の機械から HTTP で呼ぶ置き方 (勧める) と、nasne の上で動かす置き方 (mipsel、公式の 2.6.29 カーネルで、起動・API・コマンドの起動までを実機で確認) がある。nasne は 1 回に 1 局しか出さず復号も機材の中で行うので、denpa 側に録画の選局へ局を付ける直しが要る。nasne に B-CAS が無くても、`nasne-recpt1` の `--no-bcas` (生の TS。[maimainoue/SonyNasne-debian](https://github.com/maimainoue/SonyNasne-debian) の fork にしかない) を組み込みの機種 `Sony nasne (nasne-recpt1 HTTP raw)` で使い、復号はエージェントのカードで行える ([仕様書 6.5](docs/spec.md))
 
 denpa 付属のエージェントは PLEX・e-Better の IT930x の機材を USB で直に持つので、px4_drv を入れたホストでは使えません。
+**自動検出は、denpa が対応している機種 (IT930x の機材・PX-S1UD・Sony CECH-ZD1 J) を既定で外します** (denpa 付属のエージェントと取り合わないため)。対象にするには、環境変数 `DETECT_INCLUDE` に機種名か `denpa` を書きます (Linux で px4_drv の PLEX を使うときは `DETECT_INCLUDE=denpa`)。`tuners.json` に書いた機材は、いつも使えます。
 このエージェントは px4_drv を残したまま、その機材を denpa で使うためのものです。
 
 - 仕様: [docs/spec.md](docs/spec.md)

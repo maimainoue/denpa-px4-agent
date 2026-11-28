@@ -43,7 +43,7 @@ func TestDetect_WinUSBの機材をインターフェースGUIDで数える(t *te
 		usb: []string{usbPath("0511", "083f", "a"), usbPath("0511", "083f", "b"), usbPath("04bb", "0530", "c")},
 	}
 	var logs []string
-	got, err := Detect(devices.Builtin(), en, func(f string, a ...any) { logs = append(logs, f) })
+	got, err := Detect(allDefs(), en, func(f string, a ...any) { logs = append(logs, f) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestDetect_ドライバーが入っていない機材は数えず警告す�
 		usb:   []string{usbPath("04bb", "0530", "c")},
 	}
 	var logs []string
-	got, err := Detect(devices.Builtin(), en, func(f string, a ...any) { logs = append(logs, strings.TrimSpace(f)) })
+	got, err := Detect(allDefs(), en, func(f string, a ...any) { logs = append(logs, strings.TrimSpace(f)) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,20 +107,20 @@ func TestDetect_受信機の無い機種は並べない(t *testing.T) {
 		iface: map[string][]string{"{cd6ae7c3-5a4d-42a4-b33f-f0f0a6cfaeed}": {`x`}},
 		usb:   []string{usbPath("04bb", "0526", "1")},
 	}
-	got, err := Detect(devices.Builtin(), en, nil)
+	got, err := Detect(allDefs(), en, nil)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("got=%+v err=%v", got, err)
 	}
 }
 
 func TestDetect_列挙に失敗したら_何も見つからないときだけエラー(t *testing.T) {
-	_, err := Detect(devices.Builtin(), fakeEnum{ifaceErr: errors.New("boom"), usbErr: errors.New("boom")}, nil)
+	_, err := Detect(allDefs(), fakeEnum{ifaceErr: errors.New("boom"), usbErr: errors.New("boom")}, nil)
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Fatalf("err = %v", err)
 	}
 	// USB の列挙だけ失敗しても、GUID で数えられる機種は並ぶ
 	en := fakeEnum{iface: map[string][]string{ifXZ: {`x`}}, usbErr: errors.New("usb")}
-	got, err := Detect(devices.Builtin(), en, nil)
+	got, err := Detect(allDefs(), en, nil)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("got=%+v err=%v", got, err)
 	}
@@ -130,7 +130,7 @@ func TestDetect_macOSのようにインターフェースGUIDが無い_OSは_USB
 	// 組み込みの機種は interfaceGuid を持つが、InterfacePaths が ErrNoInterface を返すなら、警告なしで USB の数を使う
 	en := fakeEnum{ifaceErr: ErrNoInterface, usb: []string{"iokit#vid_04bb&pid_0530#0", "iokit#vid_04bb&pid_0530#1"}}
 	var logs []string
-	got, err := Detect(devices.Builtin(), en, func(f string, a ...any) { logs = append(logs, f) })
+	got, err := Detect(allDefs(), en, func(f string, a ...any) { logs = append(logs, f) })
 	if err != nil || len(got) != 2 || got[1].Name != "I-O DATA GV-MVP/XZ (2) #0" || got[1].Device != "px4host:{9D54F32C-9BD4-4758-B0FA-3B8050CB29E0}:0:1" {
 		t.Fatalf("got=%+v err=%v", got, err)
 	}
@@ -147,5 +147,38 @@ func TestUsbID(t *testing.T) {
 		if got := usbID(in); got != want {
 			t.Errorf("%q: %q (want %q)", in, got, want)
 		}
+	}
+}
+
+// allDefs は、denpa が対応している機種も自動検出の対象にした機種表 (DETECT_INCLUDE=denpa)。
+func allDefs() *devices.Defs {
+	d := devices.Builtin()
+	d.SetDetectInclude([]string{devices.IncludeAllDenpa})
+	return d
+}
+
+func TestDetect_denpaが対応している機種は既定で外し_DETECT_INCLUDEで対象にする(t *testing.T) {
+	en := fakeEnum{
+		iface: map[string][]string{
+			ifW3U4: {`\?\usb#vid_0511&pid_083f#a#` + ifW3U4, `\?\usb#vid_0511&pid_083f#b#` + ifW3U4},
+			ifXZ:   {`\?\usb#vid_04bb&pid_0530#c#` + ifXZ},
+		},
+		usb: []string{usbPath("0511", "083f", "a"), usbPath("0511", "083f", "b"), usbPath("04bb", "0530", "c")},
+	}
+	defs := devices.Builtin()
+	got, err := Detect(defs, en, nil)
+	if err != nil || len(got) != 1 || got[0].Name != "I-O DATA GV-MVP/XZ #0" {
+		t.Fatalf("PX-W3U4 は外れて XZ だけ並ぶはず: got=%+v err=%v", got, err)
+	}
+	if sk := defs.Skipped(); len(sk) != 1 || sk[0].Model != "PLEX PX-W3U4" || sk[0].N != 2 {
+		t.Errorf("対象外は PX-W3U4 の 2 台のはず: %v", sk)
+	}
+
+	// 機種名で対象にする
+	defs = devices.Builtin()
+	defs.SetDetectInclude([]string{"PLEX PX-W3U4"})
+	got, _ = Detect(defs, en, nil)
+	if len(got) != 9 || len(defs.Skipped()) != 0 {
+		t.Errorf("9 件 (W3U4 は 2 台 × 4 + XZ) のはず: %d 件、対象外 %v", len(got), defs.Skipped())
 	}
 }

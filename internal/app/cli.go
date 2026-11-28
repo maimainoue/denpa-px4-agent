@@ -41,12 +41,19 @@ type DevicesReport struct {
 	Configured []backend.TunerSpec
 	Models     []devices.Resolved // Configured と同じ並び。device から引いた機種 (Defs.ModelOf)
 	Found      bool
+
+	// 自動検出で見つかったが、denpa が対応している機種なので対象外にした機材 (DETECT_INCLUDE で対象にできる)
+	Skipped []devices.SkippedModel
+	Include []string // DETECT_INCLUDE の中身
 }
 
 // LoadDefs は組み込みの機種表に devices.json を重ねる (サーバの起動と同じ)。
 func LoadDefs(cfg *config.Config, log *logx.Logger) *devices.Defs {
 	defs := devices.Builtin()
 	defs.Overlay(devices.LoadFile(cfg.DevicesFile, log.Printf), log.Printf)
+	for _, n := range defs.SetDetectInclude(cfg.DetectInclude) {
+		log.Printf("DETECT_INCLUDE の `%s` は、機材の定義にありません (機種名か `%s` を書きます)", n, devices.IncludeAllDenpa)
+	}
 	return defs
 }
 
@@ -56,6 +63,7 @@ func ListDevices(cfg *config.Config, log *logx.Logger) DevicesReport {
 	defs := LoadDefs(cfg, log)
 	rep := DevicesReport{Defs: defs.All(), HasDetector: len(detectors) > 0, TunersFile: cfg.TunersFile}
 	env := &Env{Cfg: cfg, Defs: defs, Log: log.Printf}
+	defs.ResetSkipped()
 	for _, d := range detectors {
 		specs, err := d(env)
 		if err != nil {
@@ -64,6 +72,7 @@ func ListDevices(cfg *config.Config, log *logx.Logger) DevicesReport {
 		}
 		rep.Detected = append(rep.Detected, specs...)
 	}
+	rep.Skipped, rep.Include = defs.Skipped(), cfg.DetectInclude
 	rep.Configured, rep.Found = store.Tuners{Path: cfg.TunersFile}.Load(log.Printf)
 	for _, s := range rep.Configured {
 		rep.Models = append(rep.Models, defs.ModelOf(s.Device))

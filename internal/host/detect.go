@@ -97,12 +97,19 @@ func Detect(defs *devices.Defs, en Enumerator, log backend.Logf) ([]backend.Tune
 				}
 			}
 		}
-		if viaIface {
-			if nUSB > n {
-				log("%s が %d 台見えますが、WinUSB ドライバーが入っているのは %d 台です (入っていない機材は使えません。ドライバーを入れ直してください)", d.Model, nUSB, n)
-			}
-		} else {
+		warn := viaIface && nUSB > n
+		if !viaIface {
 			n = nUSB
+		}
+		// denpa が対応している機種は、DETECT_INCLUDE で選ばれない限り、自動検出の対象にしない
+		if !defs.Detectable(&d) {
+			for k := 1; k <= n; k++ {
+				defs.SkipDetect(d.Model, fmt.Sprintf("%s:%d", d.Host.DeviceGUID, k))
+			}
+			continue
+		}
+		if warn {
+			log("%s が %d 台見えますが、WinUSB ドライバーが入っているのは %d 台です (入っていない機材は使えません。ドライバーを入れ直してください)", d.Model, nUSB, n)
 		}
 		for k := 1; k <= n; k++ {
 			for _, r := range d.Receivers {

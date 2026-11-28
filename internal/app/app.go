@@ -78,6 +78,7 @@ type App struct {
 	mu           sync.Mutex
 	defined      bool
 	lastDetected []backend.TunerSpec // 前回の検出の結果 (a.mu で守る)
+	lastSkipped  string              // 前回記録に出した、自動検出の対象外にした機材 (a.mu で守る)
 }
 
 // New は設定から App を作る。
@@ -200,6 +201,7 @@ func (a *App) Redetect() {
 
 func (a *App) detect() {
 	var found []backend.TunerSpec
+	a.Defs.ResetSkipped()
 	for _, d := range detectors {
 		specs, err := d(a.env)
 		if err != nil {
@@ -210,6 +212,13 @@ func (a *App) detect() {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// denpa が対応している機種は、自動検出の対象にしない (対象にするのは DETECT_INCLUDE)。変わったときだけ記録に出す
+	if s := devices.SkippedText(a.Defs.Skipped()); s != a.lastSkipped {
+		a.lastSkipped = s
+		if s != "" {
+			a.Log.Printf("denpa が対応している機種は、自動検出の対象外です: %s (対象にするなら DETECT_INCLUDE に機種名か %s を書きます)", s, devices.IncludeAllDenpa)
+		}
+	}
 	if a.defined {
 		// 定義があれば、前に無かった機材を末尾に足す (4.2)
 		cur := a.Mgr.Specs()
