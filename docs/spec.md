@@ -166,6 +166,15 @@ nasne (HTTP) は px4_drv の機種ではなく、`cmd` バックエンドの組�
 - Windows と macOS では、DriverHost_PX4 の定義に無い機種は開けません。足すときは DriverHost_PX4.ini と `devices.json` の両方に書きます
 - Linux では、px4_drv が `/dev/<devname><N>` を作る機種だけが開けます。`devices.json` に足すのは、fork に新しい機種を足したときと、`types` を変えたいときです
 
+### 3.2.1 DRIVER_HOST_INI
+
+`DRIVER_HOST_INI` (既定は `DRIVER_HOST_PATH` の隣の `DriverHost_PX4.ini`。無ければ何もしない) は、px4_drv (fork) の ini の `[DeviceDefinitionN]` を機種表に重ねる。重ねる順は **組み込み → `DRIVER_HOST_INI` → `devices.json`**。
+
+- 機種は `GUID` で引く (`N` は Windows と macOS の ini で違う)。同じ GUID の機種があれば `DeviceInterfaceGUID` を直し、`VendorId`・`ProductId` を `usb` に足す (Windows の ini は一部の機種にしか無い)。受信機・`linux`・`denpa` は触らない
+- GUID は無いが、組み込みの機種と同じ機材 (host の定義がまだ無いもの) には、GUID を足す。同じ機材かは、同じ名前 → 別名の表 (`hostIniAlias`。`Digibest ISDB2056` → `DTV02-1T1S-U` など 6 件) → USB の ID (ちょうど 1 機種に当たるときだけ) の順で決める。見つかった機種が別の GUID で定義済みなら (ini に同じ機材の別の定義がある。DTV02A-5TS-P と PX-MLT5PE は USB の ID が同じ)、足さずに飛ばして記録に出す
+- どちらも無い機種は、新しい機種として足す。受信機の `System` から `types` を決める (`ISDB-T`→GR、`ISDB-S`→BS・CS、`ISDB-C`→CATV。カンマ区切りは和)。`index` は受信機の節の番号 `M` (ini の `Index` は方式ごとの番号で別物)。受信機の定義が無い機種・読めない方式がある機種は足さない
+- `ProductId=0xffff` の機種は、host が使わないので飛ばす。UTF-16 の ini は読まない
+
 ### 3.3 denpa が対応している機種
 
 denpa 付属のエージェントは、IT930x の機材などを USB で直に開きます。同じ機材をこのエージェントも自動検出で並べると、2 つのエージェントが同じ機材を取り合うので、**denpa が自分で開く機種は、自動検出の既定の対象から外します** (Linux の chardev、Windows の SetupAPI、macOS の IOKit のどれも)。
@@ -416,7 +425,7 @@ Sony nasne の `nasne-recpt1` のように、「1 回の起動で 1 つの局 (�
 
 - 復号の経路を通さず、受けた TS をそのまま流す (PAT・PMT・ECM・CAT・EMM も読まない)。EMM はカードに渡さない
 - `/denpa/card` は `{"ok": true, "message": "", "source": "local", "readers": [{"name": "<機種名> (機材の中で復号)", "card": "B-CAS", "ids": [], "active": true, "tuners": [<復号中のチューナー>], "disabled": false}]}` を返す。denpa はこれを「カードを読めている」と見て録画とライブを振り分ける。番号が空なので、契約を確かめたカードの順では「契約を確かめていないカード」(無料の局と同じ扱い) になる
-- `POST /denpa/card/confirm` は 500 `この機材では契約を確かめられません`。`POST /denpa/decode` も 500 `この機材で録った TS は復号済みです`
+- **手元の本物のカードが使えず、擬似のリーダーが有効なとき (「使わない」にしていない。`CARD_URL` のときは擬似のリーダーを出さない) だけ**、`POST /denpa/card/confirm` は 500 `この機材では契約を確かめられません` (元の失敗は記録に出す)。本物のカードが使えれば、機材の中で復号する機材が混ざっていても、いつもどおり。`POST /denpa/decode` は、復号済み (スクランブルされたパケットが無い) の入力ならそのまま通す。スクランブルが残る入力は、同じ条件のとき理由を `カードを使えません (機材の中で復号する機材だけです)` にした 500 ([9.7](#97-後から復号する-post-denpadecode))
 - `cards.json` の「使わない」は、この擬似のリーダーにも効く (外すと `ok: false` で、録画とライブは来なくなる)
 
 **`busyExitCode`**
@@ -989,7 +998,7 @@ denpa はログの文言を読みません (重さを文字から推し量るだ
 | `--version`                                           | バージョンを出して終わる                                                                                                  |
 | `--pair`                                              | 組むときの URL を標準出力に出して終わる (鍵と合言葉が無ければ作る。メッセージは標準エラー)                                 |
 | `--status`                                            | 動いているエージェントに自分の証明書で繋ぎ、`/denpa/tuners` の JSON をそのまま出す。繋がらなければ理由を出して 1          |
-| `--devices`                                           | 機材の定義 (組み込み + `devices.json`。機種・経路 (`chardev`・`host`・`cmd`・`http`)・USB・受信機・LNB・カード・DriverHost_PX4 の GUID) と、いま見つかっている機材 (自動検出。Linux の chardev・Windows の SetupAPI・macOS の IOKit。denpa が対応している機種は外して、台数を出す)、`tuners.json` の中身 (名前・**機種**・受信機の番号・種別・`device`・備考) を並べて終わる。機種は `device` から引く: `px4host:` は GUID、`cmd:` は最長一致の機種名、`px4:` は devname (複数の機種が共有するときは 1 つに決めず、先頭 3 つと「ほか」で候補を出す)。引けなければ理由を備考に出す。機材は開かない。`DRIVER_HOST_INI` はまだ読まない |
+| `--devices`                                           | 機材の定義 (組み込み + `devices.json`。機種・経路 (`chardev`・`host`・`cmd`・`http`)・USB・受信機・LNB・カード・DriverHost_PX4 の GUID) と、いま見つかっている機材 (自動検出。Linux の chardev・Windows の SetupAPI・macOS の IOKit。denpa が対応している機種は外して、台数を出す)、`tuners.json` の中身 (名前・**機種**・受信機の番号・種別・`device`・備考) を並べて終わる。機種は `device` から引く: `px4host:` は GUID、`cmd:` は最長一致の機種名、`px4:` は devname (複数の機種が共有するときは 1 つに決めず、先頭 3 つと「ほか」で候補を出す)。引けなければ理由を備考に出す。機材は開かない |
 | `--tune <device> <channel[,channel…]> [--lnb 15v] [--decode] [--card-url <url>] [--seconds N]` | サーバを立てずに選局して、TS を標準出力へ出す。実機で確かめる入口。`channel` は「,」で並べると 1 つずつ選局する (1 つが失敗しても、あとは続ける)。`--seconds` は、最初の TS が来てから読む秒数 (既定 10、1〜3600。最初の TS が 30 秒来なければ、そのチャンネルは失敗)。`--decode` で復号も (EMM は渡さない。4K の TLV は復号せずに出す)。`--card-url` は `CARD_URL` と同じ。標準出力が端末のときは、TS を捨てて、測定の結果だけを出す。測定の結果 (最初の TS までの時間・量と速さ・パケット数・同期はずれ・TEI・連続性カウンタの不連続・スクランブルの割合・C/N・復号した数) は標準エラーに出す。終了コードは、全部のチャンネルで TS が来れば 0 (`--decode` では、残りが復号できた数の 1% 以内)、1 つでも失敗すれば 1、引数の誤りは 2。**`<device>+<device>` の同時選局は、まだ対応していない** (引数の誤りで 2) |
 | `--decode-file <in.ts> [<out.ts>]`                    | ファイルを復号する。`out` が無ければ復号せず、スクランブルされたパケットの数と割合だけを出す (カードには触らない)。`out` があれば復号して書き、書き出す先がもうあれば断る (上書きしない)。残りが復号できた数の 1% を超えたら (`/denpa/decode` と同じ判定) 出力を消して 1 で終わる。`CARD_URL` を書けば鍵を貰う。置き場 (`RAW_DIR`) の制限は受けない。結果は標準出力、記録は標準エラー |
 | `--card`                                              | リーダーを並べ (内蔵 → 外付け)、1 つずつ開いて INT と IDI の結果 (B-CAS か A-CAS・`CA_system_id`・カード ID) を出す。**カードは排他で開くので、サーバを止めてから使う** (動いていると共有違反でそのリーダーの理由が出る)。使わない設定 (`cards.json`) のリーダーも確かめる。1 つでも読めれば 0、リーダーが無い・1 つも読めなければ 1。カード ID は個人情報なので、貼るときは気をつける |

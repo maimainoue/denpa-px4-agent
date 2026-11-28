@@ -50,6 +50,7 @@ type DevicesReport struct {
 // LoadDefs は組み込みの機種表に devices.json を重ねる (サーバの起動と同じ)。
 func LoadDefs(cfg *config.Config, log *logx.Logger) *devices.Defs {
 	defs := devices.Builtin()
+	defs.OverlayHostIni(devices.LoadHostIni(cfg.DriverHostIni, log.Printf), log.Printf)
 	defs.Overlay(devices.LoadFile(cfg.DevicesFile, log.Printf), log.Printf)
 	for _, n := range defs.SetDetectInclude(cfg.DetectInclude) {
 		log.Printf("DETECT_INCLUDE の `%s` は、機材の定義にありません (機種名か `%s` を書きます)", n, devices.IncludeAllDenpa)

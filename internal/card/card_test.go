@@ -687,3 +687,54 @@ func TestProbe_リーダーが無い_一覧を取れない(t *testing.T) {
 		t.Errorf("一覧を取れない: %v", err)
 	}
 }
+
+func deviceHook() Hooks {
+	return Hooks{Device: func() map[string][]string { return map[string][]string{"nasne": nil} }}
+}
+
+func TestConfirm_機材の中で復号する機材だけなら断る(t *testing.T) {
+	m := New(nil, nil, nil, deviceHook())
+	if _, err := m.Confirm(context.Background(), []byte{1}, 60000); !errors.Is(err, ErrDeviceOnlyConfirm) {
+		t.Fatalf("err = %v", err)
+	}
+	// 擬似のリーダーを「使わない」にすれば、いつものカード層の失敗
+	m = New(nil, &memDisabled{names: []string{"nasne (機材の中で復号)"}}, nil, deviceHook())
+	if _, err := m.Confirm(context.Background(), []byte{1}, 60000); err == nil || errors.Is(err, ErrDeviceOnlyConfirm) {
+		t.Errorf("使わない設定ではカード層の失敗のまま: %v", err)
+	}
+	// 機材の中で復号する機材が無ければ、いつものカード層の失敗
+	m = New(nil, nil, nil, Hooks{})
+	if _, err := m.Confirm(context.Background(), []byte{1}, 60000); err == nil || errors.Is(err, ErrDeviceOnlyConfirm) {
+		t.Errorf("擬似のリーダーが無ければカード層の失敗のまま: %v", err)
+	}
+}
+
+func TestConfirm_本物のカードがあれば機材の中で復号する機材が混ざっても通る(t *testing.T) {
+	h := deviceHook()
+	m := New([]Provider{&fakeProvider{readers: []ReaderInfo{{Name: "A", Internal: true}}, links: map[string]*fakeLink{"A": {}}}}, nil, nil, h)
+	if _, err := m.Confirm(context.Background(), []byte{1}, 60000); errors.Is(err, ErrDeviceOnlyConfirm) {
+		t.Errorf("本物のカードが使えるなら断らない: %v", err)
+	}
+}
+
+func TestDecodeFile_機材の中で復号する機材だけなら理由を変える(t *testing.T) {
+	dir := t.TempDir()
+	scrambled := make([]byte, 188)
+	scrambled[0], scrambled[3] = 0x47, 0x90
+	inScr := filepath.Join(dir, "scr.ts")
+	os.WriteFile(inScr, bytes.Repeat(scrambled, 2), 0o644)
+	m := New(nil, nil, nil, deviceHook())
+	_, err := m.DecodeFile(inScr, filepath.Join(dir, "out1.ts"))
+	if err == nil || !strings.Contains(err.Error(), "2 パケットがスクランブルのままです (カードを使えません (機材の中で復号する機材だけです))") {
+		t.Fatalf("err = %v", err)
+	}
+	// 復号済み (スクランブルされたパケットが無い) の入力は、カードが無くてもそのまま通る
+	inClear := filepath.Join(dir, "clear.ts")
+	clear := make([]byte, 188)
+	clear[0], clear[3] = 0x47, 0x10
+	os.WriteFile(inClear, bytes.Repeat(clear, 3), 0o644)
+	res, err := m.DecodeFile(inClear, filepath.Join(dir, "out2.ts"))
+	if err != nil || res["scrambled"] != int64(0) {
+		t.Errorf("復号済みの入力は通る: %v %+v", err, res)
+	}
+}
