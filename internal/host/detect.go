@@ -78,8 +78,9 @@ func Detect(defs *devices.Defs, en Enumerator, log backend.Logf) ([]backend.Tune
 			switch {
 			case err == nil:
 				n, viaIface = len(paths), true
-			case !errors.Is(err, ErrNoInterface): // ErrNoInterface (macOS) は、USB の ID だけで数える
+			case !errors.Is(err, ErrNoInterface): // ErrNoInterface (macOS) だけが USB の ID で数える。ほかのエラーは WinUSB の有無が分からないので、並べない
 				errs = append(errs, fmt.Sprintf("%s: %v", d.Model, err))
+				continue
 			}
 		}
 		nUSB := 0

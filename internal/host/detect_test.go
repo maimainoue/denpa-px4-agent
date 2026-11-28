@@ -182,3 +182,16 @@ func TestDetect_denpaが対応している機種は既定で外し_DETECT_INCLUD
 		t.Errorf("9 件 (W3U4 は 2 台 × 4 + XZ) のはず: %d 件、対象外 %v", len(got), defs.Skipped())
 	}
 }
+
+func TestDetect_インターフェースの列挙だけが失敗したら_USBに見えても並べない(t *testing.T) {
+	// WinUSB の有無が分からないので、USB の数で代わりにしない (ドライバーが無い機材を並べてしまう)
+	en := fakeEnum{ifaceErr: errors.New("boom"), usb: []string{usbPath("04bb", "0530", "c")}}
+	var logs []string
+	got, err := Detect(allDefs(), en, func(f string, a ...any) { logs = append(logs, f) })
+	if len(got) != 0 {
+		t.Fatalf("並べないはず: %+v", got)
+	}
+	if err == nil || !strings.Contains(err.Error(), "boom") {
+		t.Errorf("エラーになるはず: %v (logs %v)", err, logs)
+	}
+}

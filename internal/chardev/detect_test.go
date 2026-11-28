@@ -195,3 +195,20 @@ func TestDetect_denpaが対応している機種は既定で外し_DETECT_INCLUD
 		t.Errorf("CECH-ZD1 J が加わって 3 件のはず: %v", names(got))
 	}
 }
+
+func TestDetect_対象外の台数は筐体で数える(t *testing.T) {
+	// PX-W3U4 を 2 台 (受信機のファイルは 4 つずつ) つないでも、「×2」になる
+	f := newFakeSys(t)
+	for i := 0; i < 4; i++ {
+		f.node("px4video", i, f.usb("1", "2", "0511", "083f", ""))
+		f.node("px4video", 4+i, f.usb("1", "3", "0511", "083f", ""))
+	}
+	defs := devices.Builtin()
+	got, _ := Detect(defs, f.dev, f.sys)
+	if len(got) != 0 {
+		t.Fatalf("並ばないはず: %v", names(got))
+	}
+	if sk := defs.Skipped(); len(sk) != 1 || sk[0].N != 2 {
+		t.Errorf("2 台のはず: %v", sk)
+	}
+}
