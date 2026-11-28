@@ -121,7 +121,7 @@ func Detect(defs *devices.Defs, en Enumerator, log backend.Logf) ([]backend.Tune
 				}
 				out = append(out, backend.TunerSpec{
 					Name:   name,
-					Types:  append([]string{}, r.Types...),
+					Types:  devices.DetectedTypes(r.Types),
 					Device: fmt.Sprintf("%s%s:%d:%d", DevicePrefix, d.Host.DeviceGUID, r.Index, k-1),
 				})
 			}

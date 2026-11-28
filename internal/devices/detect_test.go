@@ -2,6 +2,7 @@ package devices
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -97,5 +98,19 @@ func TestSkipped_機種ごとに数えて_機種表の順に返す(t *testing.T)
 	defs.ResetSkipped()
 	if len(defs.Skipped()) != 0 || SkippedText(defs.Skipped()) != "" {
 		t.Error("リセットすると空のはず")
+	}
+}
+
+func TestDetectedTypes_CATVとSKYは付けない(t *testing.T) {
+	for _, c := range []struct{ in, want []string }{
+		{[]string{"GR", "CATV"}, []string{"GR"}},
+		{[]string{"CATV", "SKY"}, []string{}},
+		{[]string{"CS", "GR", "BS", "CATV", "SKY"}, []string{"GR", "BS", "CS"}},
+		{nil, []string{}},
+	} {
+		got := DetectedTypes(c.in)
+		if got == nil || strings.Join(got, ",") != strings.Join(c.want, ",") {
+			t.Errorf("%v: %#v (want %v)", c.in, got, c.want)
+		}
 	}
 }

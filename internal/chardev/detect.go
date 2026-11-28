@@ -16,8 +16,6 @@ import (
 // DevicePrefix は tuners.json の device の接頭辞。
 const DevicePrefix = "px4:"
 
-var detectTypes = []string{"GR", "BS", "CS"}
-
 // devfile は /dev の 1 つのデバイスファイル。
 type devfile struct {
 	name string // px4video0
@@ -151,13 +149,7 @@ func specFor(def *devices.Def, port string, idx int, f *devfile, fallback bool) 
 	}
 	types := []string{}
 	if len(def.Receivers) > 0 {
-		for _, t := range detectTypes {
-			for _, rt := range def.Receivers[idx%len(def.Receivers)].Types {
-				if t == rt {
-					types = append(types, t)
-				}
-			}
-		}
+		types = devices.DetectedTypes(def.Receivers[idx%len(def.Receivers)].Types)
 	}
 	return backend.TunerSpec{Name: name, Types: types, Device: DevicePrefix + "/dev/" + f.name}
 }

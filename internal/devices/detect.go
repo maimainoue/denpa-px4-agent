@@ -12,6 +12,23 @@ import (
 // 対象にするには、環境変数 DETECT_INCLUDE に機種名 (か `denpa`) を書く。
 // tuners.json に書いた機材は、書いた時点で明示しているので、いつも対象になる。
 
+// detectTypes は、自動検出が受信機に付ける種別。CATV と SKY は受けられても付けない (スキャンが長くなる。利用者が手で足す。仕様書 3.1)。
+var detectTypes = []string{"GR", "BS", "CS"}
+
+// DetectedTypes は、受信機が受けられる種別 (receivable) のうち、自動検出で付けるもの (GR・BS・CS の順)。無ければ空 (nil ではない)。
+func DetectedTypes(receivable []string) []string {
+	out := []string{}
+	for _, t := range detectTypes {
+		for _, r := range receivable {
+			if t == r {
+				out = append(out, t)
+				break
+			}
+		}
+	}
+	return out
+}
+
 // IncludeAllDenpa は DETECT_INCLUDE に書く、denpa が対応している機種を全部対象にする印。
 const IncludeAllDenpa = "denpa"
 

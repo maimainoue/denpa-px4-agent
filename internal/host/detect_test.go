@@ -209,3 +209,19 @@ func TestDetect_WinUSBが入っていない対象外の機材も_対象外に数
 		t.Errorf("対象外に 1 台のはず: %v", sk)
 	}
 }
+
+func TestDetect_typesはGR_BS_CSだけ_CATVとSKYは付けない(t *testing.T) {
+	defs := devices.NewDefs()
+	defs.Put(devices.Def{Model: "A", USB: []string{"1234:0001"}, Host: &devices.Host{DeviceGUID: "{1}"},
+		Receivers: []devices.Receiver{{Index: 0, Types: []string{"GR", "CATV"}}}})
+	defs.Put(devices.Def{Model: "B", USB: []string{"1234:0002"}, Host: &devices.Host{DeviceGUID: "{2}"},
+		Receivers: []devices.Receiver{{Index: 0, Types: []string{"CATV"}}}})
+	en := fakeEnum{usb: []string{usbPath("1234", "0001", "x"), usbPath("1234", "0002", "y")}}
+	got, err := Detect(defs, en, nil)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got=%+v err=%v", got, err)
+	}
+	if strings.Join(got[0].Types, ",") != "GR" || got[1].Types == nil || len(got[1].Types) != 0 {
+		t.Errorf("A は GR、B は空のはず: %#v / %#v", got[0].Types, got[1].Types)
+	}
+}
