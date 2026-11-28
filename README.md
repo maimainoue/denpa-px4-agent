@@ -103,7 +103,6 @@ denpa と一緒に使うときは、`deploy/compose.override.yml` を denpa の 
 - `tuners.json` に書かなくても、Windows (SetupAPI) と macOS (IOKit) は挿さっている機材を自動で見つけます (`px4host:<GUID>:<受信機の番号>:<台目>` を手で書くこともできます)。組み込みの表で GUID を持つのは PX-W3U4・Sony CECH-ZD1 J・I-O DATA GV-MVP/XZ (この 3 つは実機で確認済み) と、px4_drv (fork) の ini から写した MyGica T230A・PIX-DT295 Rev.01/02・TBS 5530・GV-MVP/HZ2W・QRS-UT100B・PX-S1UD です (ほかの機種は `devices.json` の `host.deviceGuid` で足します。`DRIVER_HOST_INI` (px4_drv の `DriverHost_PX4.ini`) があれば、GUID・DeviceInterfaceGUID・USB の ID を読んで足します。組み込みに無い機種も、受信機の方式から足します)。Windows は `host.interfaceGuid` の数と USB の ID の数を見て、WinUSB が入っていない機材は警告します。macOS は USB の ID の数だけで並べます (実機で、CECH-ZD1 J・PIX-DT295 Rev.01・GV-MVP/XZ を確かめました)
 - MULTI2 は ARIB STD-B25 の試験ベクタで確かめていません (暗号化と復号の往復だけ)。ioctl の引数の渡し方 (`PTX_SET_SYSTEM_MODE`・`PTX_ENABLE_LNB_POWER` は値渡し) と、ECM の返り値のうち鍵を使ってよいもの (`0x0000`・`0x0200`・`0x0400`・`0x0800`) は実機で確かめます
 - 最初の TS が届く前に溜める復号の細かい決まり (`service` を付けた利用者だけの早出し、PMT が来ないときの扱い) は簡略です
-- `/denpa/card/confirm` と `/denpa/decode` の `decryptedByDevice` の 500 は返していません
 
 ### denpa の適合テスト
 

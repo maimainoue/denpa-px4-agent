@@ -667,7 +667,43 @@ func (m *Manager) Confirm(ctx context.Context, verification []byte, mjd int) (in
 		code, err := r.Confirm(verification, uint16(mjd))
 		return int(code), err
 	}
-	return m.localConfirm(ctx, verification, mjd)
+	code, err := m.localConfirm(ctx, verification, mjd)
+	if err != nil && m.deviceOnly() {
+		// 手元の本物のカードが使えず、機材の中で復号する機材の擬似のリーダーだけが有効 (9.6)。
+		// 擬似のリーダーのおかげで /denpa/card は ok なので、カード層の失敗をそのまま返すと分かりにくい
+		if m.log != nil {
+			m.log("契約確認: 本物のカードを使えません (%v)", err)
+		}
+		return 0, ErrDeviceOnlyConfirm
+	}
+	return code, err
+}
+
+// ErrDeviceOnlyConfirm は、機材の中で復号する機材しか無いときの契約確認の失敗 (6.4)。
+var ErrDeviceOnlyConfirm = errors.New("この機材では契約を確かめられません")
+
+// deviceReaderSuffix は、機材の中で復号する機材の擬似のリーダーの名前の後ろ (9.6)。
+const deviceReaderSuffix = " (機材の中で復号)"
+
+// deviceOnly は、手元の本物のカードを開いていなくて、機材の中で復号する機材の擬似のリーダー
+// (「使わない」にしていないもの) が有効か。別の拠点から貰う設定のときは、擬似のリーダーを出さないので偽。
+func (m *Manager) deviceOnly() bool {
+	if m.hooks.Device == nil || m.remoteSource() != nil {
+		return false
+	}
+	m.mu.Lock()
+	hasCard := m.link != nil
+	m.mu.Unlock()
+	if hasCard {
+		return false
+	}
+	disabled := m.disabledSet()
+	for name := range m.hooks.Device() {
+		if !disabled[name+deviceReaderSuffix] {
+			return true
+		}
+	}
+	return false
 }
 
 // localConfirm は手元のカードに契約確認を送ります。
@@ -777,7 +813,7 @@ func (m *Manager) status() map[string]any {
 	ok := active
 	if m.hooks.Device != nil {
 		for name, used := range m.hooks.Device() {
-			label := name + " (機材の中で復号)"
+			label := name + deviceReaderSuffix
 			if disabled[label] {
 				readers = append(readers, map[string]any{"name": label, "card": "B-CAS", "ids": []string{}, "active": false, "tuners": []string{}, "disabled": true})
 				continue
@@ -940,7 +976,12 @@ func (m *Manager) DecodeFile(in, out string) (map[string]any, error) {
 		return nil, err
 	}
 	if stats.Failed() {
-		return nil, fmt.Errorf("%d パケットがスクランブルのままです (%s)", stats.Remaining, m.DecodeFailReason())
+		reason := m.DecodeFailReason()
+		if m.deviceOnly() {
+			// 機材の中で復号する機材だけで、手元の本物のカードが無い (9.7)
+			reason = "カードを使えません (機材の中で復号する機材だけです)"
+		}
+		return nil, fmt.Errorf("%d パケットがスクランブルのままです (%s)", stats.Remaining, reason)
 	}
 	return map[string]any{"packets": stats.Packets, "scrambled": stats.Remaining}, nil
 }
